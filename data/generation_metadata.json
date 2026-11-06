@@ -1,0 +1,211 @@
+{
+  "purpose": "僅供資料生成驗收，不得輸入偵測器或 Agent",
+  "seed": 42,
+  "python": "3.9.6",
+  "row_numbering": "從 1 開始，不含 CSV 標頭",
+  "measurement_decimals": {
+    "temp": 1,
+    "pressure": 2,
+    "vibration": 2
+  },
+  "distribution_scope": "常態與 Gamma 描述量化前基線，回報值再四捨五入",
+  "baseline_parameters": {
+    "temp_mean": 47.5,
+    "temp_std": 0.7,
+    "pressure_mean": 1.025,
+    "pressure_std": 0.007,
+    "vibration_gamma_shape": 36.0,
+    "vibration_gamma_scale": 0.0008333333333333333,
+    "latent_ar1": 0.8,
+    "temp_lag_minutes": 2
+  },
+  "label_policy": {
+    "source": "先依設備量測生成，之後才加入回傳故障與缺值",
+    "strict_probability": 1.0,
+    "probabilities_by_gray_count": [
+      0.01,
+      0.1,
+      0.4,
+      0.8
+    ]
+  },
+  "events": [
+    {
+      "type": "sudden",
+      "name": "三感測器突發",
+      "start_row": 270,
+      "end_row": 270,
+      "sensors": [
+        "temp",
+        "pressure",
+        "vibration"
+      ],
+      "start_time": "2026-11-07 16:29:00",
+      "end_time": "2026-11-07 16:29:00"
+    },
+    {
+      "type": "temp_drift",
+      "name": "溫度漸升、超標與恢復",
+      "start_row": 295,
+      "end_row": 349,
+      "sensors": [
+        "temp"
+      ],
+      "start_time": "2026-11-07 16:54:00",
+      "end_time": "2026-11-07 17:48:00"
+    },
+    {
+      "type": "stuck",
+      "name": "振動卡值",
+      "start_row": 365,
+      "end_row": 372,
+      "sensors": [
+        "vibration"
+      ],
+      "start_time": "2026-11-07 18:04:00",
+      "end_time": "2026-11-07 18:11:00"
+    },
+    {
+      "type": "sentinel",
+      "name": "壓力回傳 999",
+      "start_row": 385,
+      "end_row": 385,
+      "sensors": [
+        "pressure"
+      ],
+      "start_time": "2026-11-07 18:24:00",
+      "end_time": "2026-11-07 18:24:00"
+    },
+    {
+      "type": "joint_gray",
+      "name": "灰區聯合異常",
+      "start_row": 400,
+      "end_row": 419,
+      "sensors": [
+        "temp",
+        "pressure",
+        "vibration"
+      ],
+      "start_time": "2026-11-07 18:39:00",
+      "end_time": "2026-11-07 18:58:00"
+    },
+    {
+      "type": "missing",
+      "name": "溫度連續缺值",
+      "start_row": 450,
+      "end_row": 453,
+      "sensors": [
+        "temp"
+      ],
+      "start_time": "2026-11-07 19:29:00",
+      "end_time": "2026-11-07 19:32:00"
+    }
+  ],
+  "random_missing_cells": [
+    {
+      "row": 252,
+      "sensor": "pressure"
+    },
+    {
+      "row": 271,
+      "sensor": "pressure"
+    },
+    {
+      "row": 384,
+      "sensor": "vibration"
+    },
+    {
+      "row": 454,
+      "sensor": "pressure"
+    },
+    {
+      "row": 461,
+      "sensor": "vibration"
+    },
+    {
+      "row": 482,
+      "sensor": "vibration"
+    },
+    {
+      "row": 486,
+      "sensor": "vibration"
+    },
+    {
+      "row": 495,
+      "sensor": "temp"
+    }
+  ],
+  "validation": {
+    "checks": {
+      "量測小數位符合範例": true,
+      "每分鐘一筆且時間唯一": true,
+      "標籤合法且異常率 10–15%": true,
+      "前 250 筆穩態且無缺值": true,
+      "振動恆正且沒有無限值": true,
+      "有效嚴格超標皆為 abnormal": true,
+      "突發三感測器超標": true,
+      "溫度逐步升高並維持超標": true,
+      "卡值保持回報精度": true,
+      "壓力錯誤碼獨立存在": true,
+      "灰區三欄偏高但未嚴格超標": true,
+      "連續與隨機缺值均保留": true,
+      "監測區段有正常量測的 abnormal 標籤": true
+    },
+    "rows": 500,
+    "abnormal_count": 62,
+    "abnormal_rate": 0.124,
+    "missing_by_sensor": {
+      "temp": 5,
+      "pressure": 3,
+      "vibration": 4
+    },
+    "normal_sensor_abnormal_label_rows": [
+      77,
+      99,
+      115,
+      251
+    ],
+    "baseline_statistics": {
+      "temp": {
+        "mean": 47.592400000000005,
+        "std": 0.7114540797764267,
+        "min": 45.9,
+        "max": 50.1
+      },
+      "pressure": {
+        "mean": 1.02508,
+        "std": 0.006956087161211941,
+        "min": 1.01,
+        "max": 1.04
+      },
+      "vibration": {
+        "mean": 0.0308,
+        "std": 0.005752596759543611,
+        "min": 0.02,
+        "max": 0.05
+      }
+    },
+    "baseline_lag1": {
+      "temp": 0.8154694375801828,
+      "pressure": 0.625751503006012,
+      "vibration": 0.6523529560219424
+    },
+    "baseline_correlation": {
+      "temp": {
+        "temp": 1.0,
+        "pressure": 0.2723817481698611,
+        "vibration": 0.3704501805601883
+      },
+      "pressure": {
+        "temp": 0.2723817481698611,
+        "pressure": 1.0,
+        "vibration": 0.5202794809465726
+      },
+      "vibration": {
+        "temp": 0.3704501805601883,
+        "pressure": 0.5202794809465726,
+        "vibration": 1.0
+      }
+    }
+  }
+}
