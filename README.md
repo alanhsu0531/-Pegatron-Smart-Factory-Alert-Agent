@@ -9,7 +9,7 @@
 | :--- | :--- | :--- |
 | 查看畫面、提醒與處置協助 | 安裝、啟動、問答與結果閱讀 | 資料、模型、Agent 與驗證 |
 
-面試文件：[作業說明](docs/assignment%20explanation.md) ／ [背景調查](docs/background%20research.md) ／ [協作計畫與實作清單](docs/project%20plan.md)
+面試文件：[作業說明](docs/assignment%20explanation.md) ／ [背景調查](docs/background%20research.md) ／ [協作計畫與實作清單](docs/project%20plan.md) ／ [AI 工具使用說明](docs/ai-tool-usage.md)
 
 <a id="features"></a>
 
@@ -405,3 +405,15 @@ python -m unittest discover -s tests -q
 ```
 
 評估指令使用儲存庫內的標準資料，將結果寫到 **專案根目錄下**的 `outputs/model_evaluation.json`；不隨 `main.py --output-dir` 改變。測試使用暫存資料，不要求實際 Ollama 服務，也不以單元測試取代實際模型驗收。
+
+### 10. AI 工具使用與 Agent 協作
+
+本作業採 **ALL FREE AI TOOLS 的 Agent 工作流程**。我負責計畫討論、執行結果審核與授權；Agent 依 skills 完成規劃、實作、驗證、美化、PR，以及文件與簡報產製等工作。
+
+| 場景 | 工具與推論來源 | 執行內容 |
+| --- | --- | --- |
+| 專案開發 | Codex／Claude Code Agent → OmniRoute → 免費 LLM provider／模型 | 讀取專案、呼叫工具、修改檔案、執行驗證與產製交付物；本次未使用兩者會員方案提供的模型推論 |
+| 執行細節 | 規劃、設計、程式簡化與 code review 等 skills | 指導 Agent 的工作方法，降低反覆修改與不必要 token 消耗 |
+| 系統運作 | 本機 Ollama＋`qwen3:4b-instruct` | 維修解說、歷史查詢、交班摘要與工單修改預覽 |
+
+背景調查初稿另使用 Gemini Deep Research 免費網頁版。正式 PDF 簡報與書面報告也由 Agent 製作、我審核，目前仍列為後續交付。完整 provider／模型、路由截圖、skills 作用與協作案例見 [AI 工具使用說明](docs/ai-tool-usage.md)。
