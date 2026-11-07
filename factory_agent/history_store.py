@@ -8,6 +8,7 @@ import re
 import sqlite3
 import uuid
 
+from factory_agent import advice
 from factory_agent import monitor
 from factory_agent import result_view
 
@@ -81,10 +82,13 @@ class HistoryStore:
         """列出最近十批執行；各批可能是同一份合成資料的重播。"""
         with self.database() as connection:
             rows = connection.execute("SELECT id, saved_at, snapshot FROM runs ORDER BY rowid DESC LIMIT 10").fetchall()
-        return [{"run_id": run_id, "saved_at": saved_at,
-                 **{key: json.loads(snapshot)["summary"].get(key) for key in
-                    ("status", "first_timestamp", "last_timestamp", "monitored_rows")}}
-                for run_id, saved_at, snapshot in rows]
+        result = []
+        for run_id, saved_at, snapshot in rows:
+            summary = json.loads(snapshot)["summary"]
+            result.append({"run_id": run_id, "saved_at": saved_at,
+                           **{key: summary.get(key) for key in
+                              ("status", "first_timestamp", "last_timestamp", "monitored_rows")}})
+        return result
 
     def load(self, run_id: str = "") -> dict:
         """讀取指定批次，套用已確認修訂；不改動資料庫內的原始快照。"""
@@ -224,7 +228,10 @@ class HistoryStore:
         for event in snapshot["events"]:
             searchable = " ".join([event["kind"], event["advice"]["title"],
                                     monitor.LEVEL_NAMES[event["level"]], event["start_time"],
-                                    event.get("end_time", ""), *event.get("sensors", [])])
+                                    event.get("end_time", ""), *event.get("sensors", []),
+                                    *[advice.SENSOR_NAMES.get(sensor, sensor) for sensor in
+                                      event.get("sensor_history", event.get("sensors", []))],
+                                    *event.get("peak_evidence", [])])
             time_match = (re.fullmatch(r"\d{2}:\d{2}", keyword)
                           and event["start_time"][11:16] <= keyword <=
                           event.get("end_time", snapshot["summary"]["last_timestamp"])[11:16])
@@ -264,7 +271,8 @@ class HistoryStore:
                 "events": [{"id": event["id"], "title": event["advice"]["title"],
                             "peak_level": monitor.LEVEL_NAMES[event["level"]],
                             "status": event["status"], "start_time": event["start_time"],
-                            "end_time": event.get("end_time"), "evidence": event["evidence"][:3]}
+                            "end_time": event.get("end_time"), "evidence": event["evidence"][:3],
+                            "peak_evidence": event.get("peak_evidence", event["evidence"])[:3]}
                            for event in events[:20]],
                 "timeline": details, "model_warning_lead_minutes": lead,
                 "orders": [{"id": order["id"], "event_id": order["event_id"],

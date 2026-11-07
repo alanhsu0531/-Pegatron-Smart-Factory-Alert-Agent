@@ -315,11 +315,13 @@ class EventTracker:
             elif signal["level"] > event["level"]:
                 changed = "upgrade"
             if signal["level"] >= event["level"]:
-                event["kind"] = signal["kind"]
-                event["evidence"] = list(signal["reasons"])
-                event["evidence_row"] = reading["row"]
-                event["evidence_time"] = reading["timestamp"]
-                event["sensors"] = list(signal.get("sensors", []))
+                event.update(peak_evidence=list(signal["reasons"]),
+                             peak_time=reading["timestamp"], peak_row=reading["row"])
+            event.update(kind=signal["kind"], current_level=signal["level"],
+                         evidence=list(signal["reasons"]), evidence_row=reading["row"],
+                         evidence_time=reading["timestamp"], sensors=list(signal.get("sensors", [])))
+            event["sensor_history"] = [sensor for sensor in SENSORS
+                                       if sensor in event.get("sensor_history", []) + event["sensors"]]
             event["level"] = max(event["level"], signal["level"])
             event.update(status="active", last_row=reading["row"],
                          last_time=reading["timestamp"], recover_count=0)
@@ -350,6 +352,7 @@ class EventTracker:
                 "priority": "緊急" if event["level"] == 3 else "優先檢查",
                 "problem": event["advice"]["title"],
                 "evidence": event["evidence"][:2],
+                "peak_evidence": event["peak_evidence"], "peak_time": event["peak_time"],
                 "causes": event["advice"]["causes"],
                 "actions": event["advice"]["actions"],
                 "recommendation": event["advice"]["recommendation"],

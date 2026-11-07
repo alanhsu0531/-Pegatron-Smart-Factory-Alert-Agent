@@ -31,7 +31,11 @@ SYSTEM = (
     "不得修改風險、優先程度、原始證據、告警狀態，不宣稱已派工、已修復或維修完成。"
     "沒有維修完成紀錄也不代表尚未修復，只能說工單草稿待確認。"
     "propose_work_order_edit 只建立預覽，只有使用者另外輸入儲存才生效。"
-    "回答簡短、只講重點，最多五點，時間與數量採工具結果；告警恢復不代表維修完成。"
+    "歷史與交班回答只從 answer_facts 選最多五個 fact_ids，可依問題排序，不改寫紀錄或新增事實。"
+    "只選與問題直接相關的事實；查時間優先選timeline與lead_minutes，問原因才選evidence、reason或peak。"
+    "歷史與交班的最終回答只回傳 fact_ids 的 JSON；工單修改仍須呼叫預覽工具。"
+    "程式會帶入原文、時間、數量與工單狀態。"
+    "告警恢復不代表維修完成。"
     "沒有資料時明說，未讀資料或未確認根因不得猜測。不同執行批次可能是同資料重播。"
     "最近批次列表按新到舊排列，本次為第一批、前一次執行為第二批。日期查詢以資料時間為準。"
 )
@@ -60,6 +64,66 @@ EDIT_TOOL = tool("propose_work_order_edit", "根據已查詢的工單建立修�
                  ("work_order_id", "expected_revision"))
 
 
+def answer_facts(operation: str, result: dict) -> dict:
+    """由查詢結果產生可信事實，讓模型只選擇及排序。
+
+    Args:
+        operation: 歷史查詢或交班摘要工具名稱。
+        result: 該工具從指定批次取得的結果。
+
+    Returns:
+        事實 ID 對應的文字與來源，不接受模型改寫數字或處理狀態。
+    """
+    run_id = result["summary"]["run_id"]
+    facts = {}
+
+    def add(key, value, reference):
+        facts[key] = {"text": value, "reference": f"{run_id}/{reference}"}
+
+    if operation == "handoff_summary":
+        counts, orders = result["event_counts"], result["pending_orders"]
+        add("summary", f"本批事件：危急 {counts['危急']}、警告 {counts['警告']}、關注 {counts['關注']}；"
+            f"待確認工單草稿 {len(orders)} 份。", "summary")
+        add("recovery", f"告警已恢復 {result['resolved']} 件。{result['note']}", "summary")
+        for order in orders:
+            add(f"order:{order['id']}", f"{order['id']} {order['problem']}：{order['priority']}，"
+                f"草稿第 {order['revision']} 版；下一步：{order['next_action']}", "summary")
+            if order["notes"]:
+                add(f"notes:{order['id']}", f"{order['id']} 現場備註（人員回報）：{order['notes']}", "summary")
+        return facts
+
+    add("matches", f"找到 {result['matching_events']} 個相關事件、{result['matching_orders']} 份工單草稿。", "history")
+    statuses = {"active": "提醒持續中", "recovering": "恢復觀察中",
+                "awaiting_data": "等待有效回報", "resolved": "告警已恢復"}
+    for event in result["events"]:
+        add(f"event:{event['id']}", f"{event['id']} {event['title']}：開始 {event['start_time']}，"
+            f"最高等級 {event['peak_level']}，{statuses[event['status']]}"
+            + (f"（{event['end_time']}）" if event["end_time"] else "") + "。", event["id"])
+        if event["evidence"]:
+            add(f"evidence:{event['id']}", f"{event['id']} 紀錄依據：" + "；".join(event["evidence"]), event["id"])
+        if event["peak_evidence"] != event["evidence"]:
+            add(f"peak:{event['id']}", f"{event['id']} 歷史最高等級依據："
+                + "；".join(event["peak_evidence"]), event["id"])
+    milestones = {"first_warning": "首次警告", "first_critical": "首次危急",
+                  "first_strict": "首次嚴格超標", "first_model_warning": "首次模型警告"}
+    for point in result["timeline"]:
+        add(f"timeline:{point['milestone']}", f"{milestones[point['milestone']]}：{point['timestamp']}。",
+            result["events"][0]["id"])
+        if point["evidence"]:
+            add(f"reason:{point['milestone']}", f"{milestones[point['milestone']]}的依據："
+                + "；".join(point["evidence"]), result["events"][0]["id"])
+    if result["model_warning_lead_minutes"] is not None:
+        add("lead_minutes", f"模型警告比首次嚴格超標提前 {result['model_warning_lead_minutes']} 分鐘。",
+            result["events"][0]["id"])
+    for order in result["orders"]:
+        add(f"order:{order['id']}", f"{order['id']} {order['problem']}：{order['priority']}，"
+            f"工單仍為待確認草稿，第 {order['revision']} 版；告警恢復不代表維修完成。", order["id"])
+        for field, label in (("description", "工單說明"), ("notes", "現場備註（人員回報）")):
+            if order.get(field):
+                add(f"{field}:{order['id']}", f"{order['id']} {label}：{order[field]}", order["id"])
+    return facts
+
+
 class ChatSession:
     """讓模型讀取三項工具；儲存權限只在互動介面，不交給模型。"""
 
@@ -73,16 +137,16 @@ class ChatSession:
             stream.write(json.dumps({"at": history_store.now(), "question": question,
                                      "kind": kind, "data": value}, ensure_ascii=False) + "\n")
 
-    def _scope(self, question: str) -> str:
-        """常用相對批次由程式決定，不能由模型改查成另一批。"""
-        runs = self.store.runs()
+    def _scope(self, question: str, runs: list) -> str:
+        """明示或預設批次均由程式決定，模型不能另選批次。"""
+        explicit = re.search(r"\bR[0-9a-f]{12}\b", question, re.IGNORECASE)
+        if explicit:
+            return "R" + explicit.group()[1:].lower()
         if any(word in question for word in ("上一批", "前一批", "前一次執行", "上一次執行", "上次監測")):
             if len(runs) < 2:
                 raise ValueError("目前沒有上一批已保存的監測紀錄。")
             return runs[1]["run_id"]
-        if any(word in question for word in ("本次", "這次", "最近一次", "最新一批")):
-            return runs[0]["run_id"]
-        return ""
+        return runs[0]["run_id"]
 
     def _ask_edit_details(self, question: str, run_id: str, order: dict) -> dict:
         """保留已查詢的工單脈絡，先詢問修改內容，不建立或儲存修訂。"""
@@ -100,18 +164,22 @@ class ChatSession:
             raise ValueError("請輸入一千字內的問題。")
         deadline = time.monotonic() + local_agent.TIMEOUT
         self.client.check_local(min(deadline, time.monotonic() + 3))
-        scope = self._scope(question)
+        runs = self.store.runs()
+        if not runs:
+            raise ValueError("尚無監測紀錄，請先執行一次監測。")
+        scope = self._scope(question, runs)
         bare_edit = re.fullmatch(
             r"(?:請(?:幫我)?|幫我)?\s*(?:修改|編輯|調整|更新)\s*"
             r"(?:(?:本次|這次|上一批|前一批|前一次執行|上一次執行|最近一次|最新一批|上次監測)的?\s*)?"
             r"(?:工單(?:草稿)?\s*)?(?:WO-)?E\d{4}\s*[。！？!?]?",
             TRADITIONAL.convert(question).strip(), re.IGNORECASE)
         messages = [{"role": "system", "content": SYSTEM + "\n最近批次：" +
-                     json.dumps(self.store.runs(), ensure_ascii=False) +
-                     (f"\n本題指定批次為 {scope}，所有工具均使用此批次。" if scope else "")}, *self.dialogue[-4:],
+                     json.dumps(runs, ensure_ascii=False) +
+                     f"\n本題指定批次為 {scope}，所有工具均使用此批次。"}, *self.dialogue[-4:],
                     {"role": "user", "content": question}]
         tools = READ_TOOLS
-        sources, editable = {}, {}
+        sources, editable, facts = {}, {}, {}
+        operation = ""
         for attempt in range(3):
             payload = {"model": local_agent.MODEL, "messages": messages,
                        "stream": False, "think": False, "keep_alive": "10m",
@@ -121,10 +189,9 @@ class ChatSession:
             else:
                 payload["format"] = {
                     "type": "object", "additionalProperties": False,
-                    "properties": {"answer": {"type": "string", "maxLength": 800},
-                                   "references": {"type": "array", "minItems": 1, "maxItems": 6,
-                                                  "items": {"type": "string", "enum": list(sources)}}},
-                    "required": ["answer", "references"],
+                    "properties": {"fact_ids": {"type": "array", "minItems": 1, "maxItems": 5,
+                                                "items": {"type": "string", "enum": list(facts)}}},
+                    "required": ["fact_ids"],
                 }
             message = self.client.request("/api/chat", payload, deadline)["message"]
             if not isinstance(message, dict):
@@ -148,21 +215,22 @@ class ChatSession:
                     if attempt == 2:
                         raise ValueError("模型回覆格式不符，請再試一次；這次未修改任何工單。") from None
                     messages.append({"role": "user", "content": (
-                        "請依指定 JSON 格式回覆 answer 與 references，只引用本次工具結果與允許的來源，"
+                        "請依指定 JSON 格式回覆 fact_ids，只選本次工具提供的事實 ID，"
                         "不要新增未查到的事實。")})
                     continue
-                if (not isinstance(reply, dict) or set(reply) != {"answer", "references"}
-                        or not isinstance(reply.get("answer"), str) or not reply["answer"].strip()
-                        or len(reply["answer"]) > 800 or not isinstance(reply.get("references"), list)
-                        or not 1 <= len(reply["references"]) <= 6
-                        or any(not isinstance(ref, str) or ref not in sources for ref in reply["references"])
-                        or any(ord(char) < 32 and char != "\n" for char in reply["answer"])):
+                if (not isinstance(reply, dict) or set(reply) != {"fact_ids"}
+                        or not isinstance(reply["fact_ids"], list) or not 1 <= len(reply["fact_ids"]) <= 5
+                        or any(not isinstance(key, str) or key not in facts for key in reply["fact_ids"])):
                     raise ValueError("回答缺少有效的紀錄來源，這次未採用。")
-                reply["answer"] = TRADITIONAL.convert(reply["answer"])
+                selected = list(dict.fromkeys(reply["fact_ids"]))
+                if operation == "handoff_summary":
+                    selected = list(dict.fromkeys(["summary", *selected, "recovery"]))
+                answer = TRADITIONAL.convert("\n".join(facts[key]["text"] for key in selected))
+                references = list(dict.fromkeys(facts[key]["reference"] for key in selected))
                 self.dialogue.extend([{"role": "user", "content": question},
-                                      {"role": "assistant", "content": reply["answer"] +
-                                       "\n紀錄來源：" + "、".join(reply["references"])}])
-                return {"answer": reply["answer"], "sources": [sources[ref] for ref in reply["references"]]}
+                                      {"role": "assistant", "content": answer +
+                                       "\n紀錄來源：" + "、".join(references)}])
+                return {"answer": answer, "sources": [sources[ref] for ref in references]}
             if not isinstance(calls, list) or len(calls) != 1:
                 raise ValueError("一次請查詢一個重點。")
             for call in calls:
@@ -170,7 +238,7 @@ class ChatSession:
                 if name not in {item["function"]["name"] for item in tools} or not isinstance(args, dict):
                     raise ValueError("模型提出未允許的工具操作。")
                 if name == "propose_work_order_edit":
-                    key = (scope or args.get("run_id") or self.store.runs()[0]["run_id"], args.get("work_order_id"))
+                    key = (scope, args.get("work_order_id"))
                     if key not in editable or args.get("expected_revision") != editable[key]["revision"]:
                         raise ValueError("請先指定並查詢一張工單，再提出修改。")
                     changes = {field: TRADITIONAL.convert(args[field]) if isinstance(args[field], str) else args[field]
@@ -191,13 +259,13 @@ class ChatSession:
                     keyword = args.get("keyword", "")
                     if not isinstance(keyword, str):
                         raise ValueError("請提供文字關鍵字。")
-                    result = self.store.query(scope or args.get("run_id", ""), TRADITIONAL.convert(keyword))
+                    result = self.store.query(scope, TRADITIONAL.convert(keyword))
                     run_id = result["run_id"]
                     sources[f"{run_id}/history"] = f"監測批次 {run_id} 的事件紀錄"
                     for event in result["events"]:
-                        sources[f"{run_id}/{event['id']}"] = f"{event['id']} {event['title']}"
+                        sources[f"{run_id}/{event['id']}"] = f"批次 {run_id} · {event['id']} {event['title']}"
                     for order in result["orders"]:
-                        sources[f"{run_id}/{order['id']}"] = f"{order['id']} 第 {order['revision']} 版"
+                        sources[f"{run_id}/{order['id']}"] = f"批次 {run_id} · {order['id']} 第 {order['revision']} 版"
                     if not result["matching_events"]:
                         self._log(question, name, result)
                         return {"answer": "找不到符合條件的事件或工單。請指定紀錄中的事件或工單編號。",
@@ -223,12 +291,15 @@ class ChatSession:
                 else:
                     if set(args) - {"run_id"}:
                         raise ValueError("交班摘要參數不符。")
-                    result = self.store.handoff(scope or args.get("run_id", ""))
+                    result = self.store.handoff(scope)
                     run_id = result["summary"]["run_id"]
                     sources[f"{run_id}/summary"] = f"監測批次 {run_id} 的交班統計與待確認工單"
                     tools = []
-                result["reference_ids"] = list(sources)
                 self._log(question, name, result)
+                if not editable:
+                    operation = name
+                    facts = answer_facts(name, result)
+                    result = {"run_id": scope, "answer_facts": facts}
                 messages.append({"role": "tool", "tool_name": name,
                                  "content": json.dumps(result, ensure_ascii=False, allow_nan=False)})
                 if editable:

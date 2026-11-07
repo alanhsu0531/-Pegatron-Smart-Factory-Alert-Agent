@@ -1,10 +1,12 @@
 """驗證地端工具邊界、模型回覆及背景套用，不依賴實際 Ollama。"""
 
 import copy
+import csv
 import datetime
 import hashlib
 import io
 import json
+import math
 import pathlib
 import tempfile
 import threading
@@ -65,6 +67,49 @@ def tool_message(names=local_agent.TOOL_NAMES):
 
 
 class LocalAgentTest(unittest.TestCase):
+
+    def test_nonfinite_history_is_marked_and_json_serializable(self):
+        for value in (float("inf"), float("-inf"), float("nan")):
+            tracker, reading, history, _ = sample()
+            history[0]["temp"] = value
+            with self.subTest(value=value):
+                context = local_agent.context_snapshot(tracker.events[0], reading, history)
+                self.assertIsNone(context["get_history"][0]["temp"])
+                self.assertIn("temp", context["get_history"][0]["invalid_sensors"])
+                json.dumps(context, allow_nan=False)
+                self.assertFalse(math.isfinite(history[0]["temp"]))
+
+    def test_nonfinite_fallback_trace_cannot_break_poll_or_close(self):
+        tracker, reading, history, _ = sample()
+        trace = io.StringIO()
+        result = {"advice": None, "trace": {"status": "fallback", "reason": "測試無效回覆",
+                                           "result": {"value": float("nan")}}}
+        with mock.patch.object(local_agent.OllamaClient, "explain", return_value=result):
+            agent = local_agent.LocalAgent(trace)
+            agent.update(tracker, reading, history)
+            agent.close(tracker)
+        self.assertIsNone(json.loads(trace.getvalue())["result"]["value"])
+        self.assertEqual(tracker.events[0]["advice"]["source"], "規則備援")
+
+    def test_nonfinite_csv_keeps_full_monitoring_with_ollama_enabled(self):
+        with CSV.open() as stream:
+            rows = list(csv.reader(stream))
+        rows[251][1] = "inf"
+        response = tool_message()
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            source = root / "nonfinite.csv"
+            with source.open("w", newline="") as stream:
+                csv.writer(stream).writerows(rows)
+            with mock.patch.object(local_agent.OllamaClient, "check_local"), (
+                    mock.patch.object(local_agent.OllamaClient, "request", return_value=response)):
+                result = main.run(source, root / "results", 0, console.Console(file=io.StringIO()), use_ollama=True)
+            self.assertEqual(result["status"], "finished")
+            self.assertEqual(result["monitored_rows"], 250)
+            records = [json.loads(line) for line in (root / "results/readings.jsonl").read_text().splitlines()]
+            self.assertFalse(records[0]["raw_valid"]["temp"])
+            for line in (root / "results/agent_trace.jsonl").read_text().splitlines():
+                json.loads(line, parse_constant=lambda value: self.fail(f"非有限 JSON：{value}"))
 
     def test_snapshot_rejects_future_and_does_not_share_mutable_history(self):
         _, reading, history, context = sample()
