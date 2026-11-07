@@ -10,8 +10,8 @@ from rich import console
 from rich import table
 from sklearn import metrics
 
-import monitor
-import theme
+from factory_agent import monitor
+from factory_agent import theme
 
 
 ROOT = pathlib.Path(__file__).resolve().parent

@@ -16,7 +16,7 @@ from rich import cells
 
 import evaluate_model
 import main
-import monitor
+from factory_agent import monitor
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]

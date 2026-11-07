@@ -13,9 +13,9 @@ from rich import panel
 from rich import table
 from rich import text
 
-import history_store
-import local_agent
-import theme
+from factory_agent import history_store
+from factory_agent import local_agent
+from factory_agent import theme
 
 
 SYSTEM = (

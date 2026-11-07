@@ -9,7 +9,7 @@ import pathlib
 import numpy as np
 from sklearn import ensemble
 
-import advice
+from factory_agent import advice
 
 
 SENSORS = ["temp", "pressure", "vibration"]

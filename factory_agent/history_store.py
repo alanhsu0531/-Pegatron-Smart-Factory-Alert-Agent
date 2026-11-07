@@ -8,8 +8,8 @@ import re
 import sqlite3
 import uuid
 
-import monitor
-import result_view
+from factory_agent import monitor
+from factory_agent import result_view
 
 
 EDIT_FIELDS = {"problem": "問題摘要", "description": "工單說明", "notes": "現場備註"}

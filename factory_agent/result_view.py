@@ -3,8 +3,8 @@
 import html
 import pathlib
 
-import advice
-import monitor
+from factory_agent import advice
+from factory_agent import monitor
 
 
 STATUS_NAMES = {"active": "持續中", "recovering": "恢復觀察中",

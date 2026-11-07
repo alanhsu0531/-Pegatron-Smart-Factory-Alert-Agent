@@ -9,8 +9,8 @@ import threading
 import time
 import urllib.request
 
-import advice
-import monitor
+from factory_agent import advice
+from factory_agent import monitor
 
 
 ENDPOINT = "http://127.0.0.1:11434"

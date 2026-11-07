@@ -14,9 +14,9 @@ from unittest import mock
 
 from rich import console
 
-import local_agent
 import main
-import monitor
+from factory_agent import local_agent
+from factory_agent import monitor
 
 
 CSV = pathlib.Path(__file__).resolve().parents[1] / "data/sensor_data.csv"
