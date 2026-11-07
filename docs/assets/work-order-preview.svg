@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="rich-terminal" viewBox="0 0 1287 245.2" width="1287" height="245.2" role="img">
+
+    <title>WO-E0005 現場備註修改預覽；示範文字，尚未儲存，需使用者輸入儲存才套用</title><style>
+
+
+    .terminal-3954291523-matrix {
+        font-family: Menlo, "PingFang TC", "Microsoft JhengHei", monospace;
+        font-size: 20px;
+        line-height: 24.4px;
+        font-variant-east-asian: full-width;
+    }
+
+    .terminal-3954291523-title {
+        font-size: 18px;
+        font-weight: bold;
+        font-family: arial;
+    }
+
+    .terminal-3954291523-r1 { fill: #75c9ec }
+.terminal-3954291523-r2 { fill: #dce5ed }
+.terminal-3954291523-r3 { fill: #8a97a6 }
+.terminal-3954291523-r4 { fill: #75c9ec;font-weight: bold }
+.terminal-3954291523-r5 { fill: #dce5ed;font-weight: bold }
+.terminal-3954291523-r6 { fill: #e6bc75 }
+    </style>
+
+    <defs>
+    <clipPath id="terminal-3954291523-clip-terminal">
+      <rect x="0" y="0" width="1267.8" height="194.2" />
+    </clipPath>
+    <clipPath id="terminal-3954291523-line-0">
+    <rect x="0" y="1.5" width="1268.8" height="24.65" />
+            </clipPath>
+<clipPath id="terminal-3954291523-line-1">
+    <rect x="0" y="25.9" width="1268.8" height="24.65" />
+            </clipPath>
+<clipPath id="terminal-3954291523-line-2">
+    <rect x="0" y="50.3" width="1268.8" height="24.65" />
+            </clipPath>
+<clipPath id="terminal-3954291523-line-3">
+    <rect x="0" y="74.7" width="1268.8" height="24.65" />
+            </clipPath>
+<clipPath id="terminal-3954291523-line-4">
+    <rect x="0" y="99.1" width="1268.8" height="24.65" />
+            </clipPath>
+<clipPath id="terminal-3954291523-line-5">
+    <rect x="0" y="123.5" width="1268.8" height="24.65" />
+            </clipPath>
+<clipPath id="terminal-3954291523-line-6">
+    <rect x="0" y="147.9" width="1268.8" height="24.65" />
+            </clipPath>
+    </defs>
+
+    <rect fill="#142333" stroke="rgba(255,255,255,0.35)" stroke-width="1" x="1" y="1" width="1285" height="243.2" rx="8" /><text class="terminal-3954291523-title" fill="#dce5ed" text-anchor="middle" x="642" y="27">工單草稿 · 修改預覽</text>
+            <g transform="translate(26,22)">
+            <circle cx="0" cy="0" r="7" fill="#ff5f57" />
+            <circle cx="22" cy="0" r="7" fill="#febc2e" />
+            <circle cx="44" cy="0" r="7" fill="#28c840" />
+            </g>
+
+    <g transform="translate(9, 41)" clip-path="url(#terminal-3954291523-clip-terminal)">
+
+    <g class="terminal-3954291523-matrix">
+    <text class="terminal-3954291523-r1" x="0" y="20" textLength="549" clip-path="url(#terminal-3954291523-line-0)" lengthAdjust="spacingAndGlyphs">工單 WO-E0005 · 優先程度：緊急 · 草稿修改預覽</text><text class="terminal-3954291523-r2" x="1268.8" y="20" textLength="0" clip-path="url(#terminal-3954291523-line-0)" lengthAdjust="spacingAndGlyphs">
+</text><text class="terminal-3954291523-r3" x="0" y="44.4" textLength="414.8" clip-path="url(#terminal-3954291523-line-1)" lengthAdjust="spacingAndGlyphs">資料批次：R7a6910ed0394 · 原版本：</text><text class="terminal-3954291523-r4" x="414.8" y="44.4" textLength="12.2" clip-path="url(#terminal-3954291523-line-1)" lengthAdjust="spacingAndGlyphs">0</text><text class="terminal-3954291523-r2" x="1268.8" y="44.4" textLength="0" clip-path="url(#terminal-3954291523-line-1)" lengthAdjust="spacingAndGlyphs">
+</text><text class="terminal-3954291523-r2" x="0" y="68.8" textLength="1268.8" clip-path="url(#terminal-3954291523-line-2)" lengthAdjust="spacingAndGlyphs">┌──────────┬─────────────────────────────────────────────┬─────────────────────────────────────────────┐</text><text class="terminal-3954291523-r2" x="1268.8" y="68.8" textLength="0" clip-path="url(#terminal-3954291523-line-2)" lengthAdjust="spacingAndGlyphs">
+</text><text class="terminal-3954291523-r2" x="0" y="93.2" textLength="12.2" clip-path="url(#terminal-3954291523-line-3)" lengthAdjust="spacingAndGlyphs">│</text><text class="terminal-3954291523-r5" x="24.4" y="93.2" textLength="97.6" clip-path="url(#terminal-3954291523-line-3)" lengthAdjust="spacingAndGlyphs">欄位    </text><text class="terminal-3954291523-r2" x="134.2" y="93.2" textLength="12.2" clip-path="url(#terminal-3954291523-line-3)" lengthAdjust="spacingAndGlyphs">│</text><text class="terminal-3954291523-r5" x="158.6" y="93.2" textLength="524.6" clip-path="url(#terminal-3954291523-line-3)" lengthAdjust="spacingAndGlyphs">原內容                                     </text><text class="terminal-3954291523-r2" x="695.4" y="93.2" textLength="12.2" clip-path="url(#terminal-3954291523-line-3)" lengthAdjust="spacingAndGlyphs">│</text><text class="terminal-3954291523-r5" x="719.8" y="93.2" textLength="524.6" clip-path="url(#terminal-3954291523-line-3)" lengthAdjust="spacingAndGlyphs">修改後                                     </text><text class="terminal-3954291523-r2" x="1256.6" y="93.2" textLength="12.2" clip-path="url(#terminal-3954291523-line-3)" lengthAdjust="spacingAndGlyphs">│</text><text class="terminal-3954291523-r2" x="1268.8" y="93.2" textLength="0" clip-path="url(#terminal-3954291523-line-3)" lengthAdjust="spacingAndGlyphs">
+</text><text class="terminal-3954291523-r2" x="0" y="117.6" textLength="1268.8" clip-path="url(#terminal-3954291523-line-4)" lengthAdjust="spacingAndGlyphs">├──────────┼─────────────────────────────────────────────┼─────────────────────────────────────────────┤</text><text class="terminal-3954291523-r2" x="1268.8" y="117.6" textLength="0" clip-path="url(#terminal-3954291523-line-4)" lengthAdjust="spacingAndGlyphs">
+</text><text class="terminal-3954291523-r2" x="0" y="142" textLength="12.2" clip-path="url(#terminal-3954291523-line-5)" lengthAdjust="spacingAndGlyphs">│</text><text class="terminal-3954291523-r2" x="24.4" y="142" textLength="97.6" clip-path="url(#terminal-3954291523-line-5)" lengthAdjust="spacingAndGlyphs">現場備註</text><text class="terminal-3954291523-r2" x="134.2" y="142" textLength="12.2" clip-path="url(#terminal-3954291523-line-5)" lengthAdjust="spacingAndGlyphs">│</text><text class="terminal-3954291523-r2" x="158.6" y="142" textLength="524.6" clip-path="url(#terminal-3954291523-line-5)" lengthAdjust="spacingAndGlyphs">無                                         </text><text class="terminal-3954291523-r2" x="695.4" y="142" textLength="12.2" clip-path="url(#terminal-3954291523-line-5)" lengthAdjust="spacingAndGlyphs">│</text><text class="terminal-3954291523-r2" x="719.8" y="142" textLength="524.6" clip-path="url(#terminal-3954291523-line-5)" lengthAdjust="spacingAndGlyphs">已通知當班負責人，等待核對量測。           </text><text class="terminal-3954291523-r2" x="1256.6" y="142" textLength="12.2" clip-path="url(#terminal-3954291523-line-5)" lengthAdjust="spacingAndGlyphs">│</text><text class="terminal-3954291523-r2" x="1268.8" y="142" textLength="0" clip-path="url(#terminal-3954291523-line-5)" lengthAdjust="spacingAndGlyphs">
+</text><text class="terminal-3954291523-r2" x="0" y="166.4" textLength="1268.8" clip-path="url(#terminal-3954291523-line-6)" lengthAdjust="spacingAndGlyphs">└──────────┴─────────────────────────────────────────────┴─────────────────────────────────────────────┘</text><text class="terminal-3954291523-r2" x="1268.8" y="166.4" textLength="0" clip-path="url(#terminal-3954291523-line-6)" lengthAdjust="spacingAndGlyphs">
+</text><text class="terminal-3954291523-r6" x="0" y="190.8" textLength="414.8" clip-path="url(#terminal-3954291523-line-7)" lengthAdjust="spacingAndGlyphs">輸入「儲存」套用，或「取消」放棄。</text><text class="terminal-3954291523-r2" x="1268.8" y="190.8" textLength="0" clip-path="url(#terminal-3954291523-line-7)" lengthAdjust="spacingAndGlyphs">
+</text>
+    </g>
+    </g>
+</svg>
