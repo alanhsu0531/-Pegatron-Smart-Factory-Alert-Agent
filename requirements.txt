@@ -3,6 +3,7 @@ joblib==1.5.3
 markdown-it-py==3.0.0
 mdurl==0.1.2
 numpy==2.0.2
+opencc-python-reimplemented==0.1.7
 pandas==2.3.3
 plotext==6.1.0
 Pygments==2.21.0

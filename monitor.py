@@ -273,6 +273,21 @@ class EventTracker:
         self.active = {}
         self.work_orders = {}
 
+    def set_advice(self, event_id: str, recommendation: dict) -> None:
+        """同步已驗證建議至事件及既有工單，不改動風險或恢復狀態。"""
+        event = next(item for item in self.events if item["id"] == event_id)
+        event["advice"] = recommendation
+        if event_id in self.work_orders:
+            order = self.work_orders[event_id]
+            for key in [field for field, _ in advice.CONTEXT_FIELDS] + ["as_of"]:
+                order.pop(key, None)
+            order.update(problem=recommendation["title"],
+                         **{key: recommendation[key] for key in
+                            ("causes", "actions", "recommendation", "source")},
+                         **{key: recommendation[key] for key in
+                            [field for field, _ in advice.CONTEXT_FIELDS] + ["as_of"]
+                            if key in recommendation})
+
     def update(self, reading: dict) -> list[dict]:
         """更新事件與工單，並保留尚未解除的設備風險。
 
@@ -285,6 +300,8 @@ class EventTracker:
         changes = []
         for key, signal in reading["signals"].items():
             event = self.active.get(key)
+            previous = ((event["kind"], event["level"], event.get("sensors", []))
+                        if event else None)
             changed = None
             if event is None:
                 event = {"id": f"E{len(self.events) + 1:04d}", "key": key,
@@ -301,11 +318,13 @@ class EventTracker:
                 event["kind"] = signal["kind"]
                 event["evidence"] = list(signal["reasons"])
                 event["evidence_row"] = reading["row"]
+                event["evidence_time"] = reading["timestamp"]
                 event["sensors"] = list(signal.get("sensors", []))
             event["level"] = max(event["level"], signal["level"])
             event.update(status="active", last_row=reading["row"],
                          last_time=reading["timestamp"], recover_count=0)
-            event["advice"] = advice.make_advice(event["kind"], event["sensors"])
+            if previous != (event["kind"], event["level"], event["sensors"]):
+                event["advice"] = advice.make_advice(event["kind"], event["sensors"])
             if changed:
                 changes.append({"change": changed, "event": dict(event)})
         for key, event in list(self.active.items()):
@@ -334,6 +353,10 @@ class EventTracker:
                 "causes": event["advice"]["causes"],
                 "actions": event["advice"]["actions"],
                 "recommendation": event["advice"]["recommendation"],
+                "source": event["advice"]["source"],
+                **{key: event["advice"][key] for key in
+                   [field for field, _ in advice.CONTEXT_FIELDS] + ["as_of"]
+                   if key in event["advice"]},
                 "created_at": previous.get("created_at", reading["timestamp"]),
                 "updated_at": (reading["timestamp"] if event["status"] != "resolved"
                                else event["end_time"]),

@@ -2,6 +2,8 @@
 
 
 SENSOR_NAMES = {"temp": "溫度", "pressure": "壓力", "vibration": "振動"}
+CONTEXT_FIELDS = (("situation", "目前狀況"), ("inspection_reason", "優先檢查"),
+                  ("next_step", "查核後處置"))
 
 
 PLAYBOOKS = {
