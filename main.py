@@ -5,6 +5,8 @@ import collections
 import json
 import math
 import pathlib
+import sqlite3
+import sys
 import time
 
 from rich import box
@@ -14,6 +16,10 @@ from rich import panel
 from rich import table
 from rich import text
 
+import advice
+import chat
+import history_store
+import local_agent
 import monitor
 import result_view
 import theme
@@ -56,7 +62,7 @@ def value_region(sensor: str, value, is_valid: bool) -> tuple[str, str]:
     return "正常範圍", PALETTE["normal"]
 
 
-def guidance(tracker: monitor.EventTracker, compact: bool = False):
+def guidance(tracker: monitor.EventTracker, compact: bool = False, width: int = 80):
     """將最高優先事件轉成簡短的現場處置提示。"""
     if not tracker.active:
         detail = "目前沒有持續中的提醒，請持續觀察。"
@@ -66,7 +72,31 @@ def guidance(tracker: monitor.EventTracker, compact: bool = False):
             detail, title="處置重點", title_align="left", box=box.SQUARE,
             border_style=PALETTE["border"])
     event = max(tracker.active.values(), key=lambda item: item["level"])
-    advice = event["advice"]
+    recommendation = event["advice"]
+    if (event["status"] == "active"
+            and all(field in recommendation for field, _ in advice.CONTEXT_FIELDS)):
+        detail = text.Text()
+        as_of = recommendation["as_of"][11:16]
+        fields = (("situation", f"{as_of} 狀況"), ("first_action", "先做"),
+                  ("next_step", "查核後")) if compact else advice.CONTEXT_FIELDS
+        for index, (field, label) in enumerate(fields):
+            value = (recommendation["actions"][0] if field == "first_action"
+                     else recommendation[field])
+            line = text.Text.assemble((f"{label}：", "bold"), value)
+            if compact:
+                line.truncate(width, overflow="ellipsis")
+            if index:
+                detail.append("\n")
+            detail.append_text(line)
+        if compact:
+            return detail
+        if event["id"] in tracker.work_orders:
+            detail.append(f"\n工單 WO-{event['id']}：已備妥草稿，待確認。")
+        if len(tracker.active) > 1:
+            detail.append(f"\n另有 {len(tracker.active) - 1} 項提醒，詳情已記錄。")
+        return panel.Panel(detail, title=f"處置重點 · 依據 {as_of} 回報",
+                           title_align="left", box=box.SQUARE,
+                           border_style=COLORS[event["level"]])
     if event["status"] == "recovering":
         detail = ("[bold]目前狀況：[/]正在確認恢復，提醒尚未解除。\n"
                   f"[bold]下一步：[/]再確認 {3 - event['recover_count']} 筆有效回報。")
@@ -74,14 +104,14 @@ def guidance(tracker: monitor.EventTracker, compact: bool = False):
         detail = ("[bold]目前狀況：[/]資料不足，先前提醒暫時保留。\n"
                   "[bold]下一步：[/]先恢復有效回報，再確認設備狀態。")
     else:
-        detail = f"[bold]目前狀況：[/]{advice['title']}\n[bold]建議處置：[/]"
+        detail = f"[bold]目前狀況：[/]{recommendation['title']}\n[bold]建議處置：[/]"
         if compact:
-            detail += advice["actions"][0]
+            detail += recommendation["actions"][0]
         else:
             detail += "\n" + "\n".join(
-                f"  {i}. {action}" for i, action in enumerate(advice["actions"], 1))
+                f"  {i}. {action}" for i, action in enumerate(recommendation["actions"], 1))
             detail += (f"\n[{PALETTE['muted']}]優先檢查方向："
-                       f"{advice['causes'][0]}[/]")
+                       f"{recommendation['causes'][0]}[/]")
     if event["id"] in tracker.work_orders and not compact:
         detail += f"\n工單 WO-{event['id']}：已備妥草稿，待確認。"
     if len(tracker.active) > 1 and not compact:
@@ -151,9 +181,14 @@ def dashboard(reading: dict, tracker: monitor.EventTracker, width: int = 80,
     footer = table.Table.grid(expand=True)
     footer.add_column(style=PALETTE["attention"] if tracker.work_orders else PALETTE["muted"])
     footer.add_column(justify="right", style=PALETTE["muted"])
-    footer.add_row(f"工單草稿 {len(tracker.work_orders)} 份 · 待確認", "本機規則模板")
+    source = getattr(tracker, "agent_status", "本機規則模板")
+    if tracker.active:
+        current = max(tracker.active.values(), key=lambda event: event["level"])
+        source = ("規則建議 · AI 整理中" if current["id"] in
+                  getattr(tracker, "agent_pending", ()) else current["advice"]["source"])
+    footer.add_row(f"工單草稿 {len(tracker.work_orders)} 份 · 待確認", source)
     return console.Group(
-        heading, header, values, *charts, guidance(tracker, compact), footer,
+        heading, header, values, *charts, guidance(tracker, compact, width), footer,
     )
 
 
@@ -171,7 +206,7 @@ def save_results(output_dir: pathlib.Path, tracker: monitor.EventTracker,
 
 
 def run(csv_path: pathlib.Path, output_dir: pathlib.Path, interval: float,
-        output: console.Console) -> dict:
+        output: console.Console, use_ollama: bool = False) -> dict:
     """先初始化 250 筆，再依序監測；原始 CSV 只讀。
 
     Args:
@@ -179,6 +214,7 @@ def run(csv_path: pathlib.Path, output_dir: pathlib.Path, interval: float,
         output_dir: 本次事件與工單紀錄目錄。
         interval: 每筆播放間隔秒數，0 代表快速驗收。
         output: Rich 終端輸出。
+        use_ollama: 啟用地端建議；程式呼叫預設使用模板，CLI 預設啟用。
 
     Returns:
         監測摘要。
@@ -196,6 +232,7 @@ def run(csv_path: pathlib.Path, output_dir: pathlib.Path, interval: float,
         history = collections.deque(baseline[-trends.WINDOW_SAMPLES:],
                                     maxlen=trends.WINDOW_SAMPLES)
         output_dir.mkdir(parents=True, exist_ok=True)
+        store = history_store.HistoryStore(output_dir)
         counts = collections.Counter()
         missing = collections.Counter()
         imputed = collections.Counter()
@@ -203,7 +240,11 @@ def run(csv_path: pathlib.Path, output_dir: pathlib.Path, interval: float,
         first_timestamp = None
         interrupted = False
         completed = False
-        with (output_dir / "readings.jsonl").open("w", encoding="utf-8") as stream:
+        with (output_dir / "readings.jsonl").open("w", encoding="utf-8") as stream, (
+                (output_dir / "agent_trace.jsonl").open("w", encoding="utf-8")) as trace_stream:
+            agent = local_agent.LocalAgent(trace_stream) if use_ollama else None
+            if agent:
+                tracker.agent_status = "地端 AI 待命"
             with live.Live(console=output, auto_refresh=False) as screen:
                 try:
                     for record in records:
@@ -212,6 +253,8 @@ def run(csv_path: pathlib.Path, output_dir: pathlib.Path, interval: float,
                         reading = detector.analyze(record)
                         tracker.update(reading)
                         history.append(record)
+                        if agent:
+                            agent.update(tracker, reading, history)
                         counts[monitor.LEVEL_NAMES[reading["equipment_level"]]] += 1
                         missing.update(sensor for sensor in monitor.SENSORS
                                        if record[sensor] is None)
@@ -232,6 +275,12 @@ def run(csv_path: pathlib.Path, output_dir: pathlib.Path, interval: float,
                 except KeyboardInterrupt:
                     interrupted = True
                 finally:
+                    if agent:
+                        try:
+                            agent.close(tracker, wait=not interrupted)
+                        except KeyboardInterrupt:
+                            interrupted = True
+                            agent.close(tracker, wait=False)
                     summary = {
                         "status": ("interrupted" if interrupted else
                                    "finished" if completed else "incomplete"),
@@ -250,8 +299,11 @@ def run(csv_path: pathlib.Path, output_dir: pathlib.Path, interval: float,
                         "last_state": {key: last[key] for key in
                                        ("equipment_level", "quality_level", "label")}
                         if last else None,
-                        "advice_source": "本機規則模板，尚未接入 Ollama",
+                        "advice_source": getattr(tracker, "agent_status", "本機規則模板"),
+                        "agent": agent.summary() if agent else {"enabled": False},
                     }
+                    summary["run_id"] = store.archive(
+                        summary, tracker.events, list(tracker.work_orders.values()))
                     save_results(output_dir, tracker, summary)
         if not interrupted and (last is None or last["row"] != 500):
             raise ValueError("本專案 CSV 預期共 500 筆，資料已提前結束。")
@@ -278,10 +330,27 @@ def run(csv_path: pathlib.Path, output_dir: pathlib.Path, interval: float,
                                      style=COLORS[event["level"]]),
                            STATUS_NAMES[event["status"]], work_order)
         output.print(events)
+        contextual = [order for order in tracker.work_orders.values()
+                      if all(field in order for field, _ in advice.CONTEXT_FIELDS)]
+        if contextual:
+            order = min(contextual, key=lambda item: (item["priority"] != "緊急",
+                                                       item["created_at"]))
+            detail = text.Text()
+            for index, (field, label) in enumerate(advice.CONTEXT_FIELDS):
+                if index:
+                    detail.append("\n")
+                detail.append(f"{label}：", style="bold")
+                detail.append(order[field])
+            output.print(panel.Panel(
+                detail, title=f"優先工單建議 · {order['id']}", title_align="left",
+                subtitle=f"告警{STATUS_NAMES[order['event_status']]} · 草稿待確認 · "
+                         f"依據 {order['as_of'][11:16]} 回報",
+                box=box.SQUARE, border_style=PALETTE["border"]))
         output.print("工單保留為待確認草稿；告警恢復不代表檢修已完成。")
         output.print(f"結果摘要與維修工單：{output_dir / 'results.html'}", markup=False)
         output.print(f"詳細逐筆紀錄：{output_dir}", markup=False, style=PALETTE["muted"])
-        output.print("終端機流程待你審核通過後，再接入 Ollama。")
+        output.print(f"建議來源：{summary['advice_source']}", markup=False,
+                     style=PALETTE["muted"])
         return summary
     finally:
         records.close()
@@ -296,13 +365,26 @@ def main() -> None:
     parser.add_argument("--output-dir", type=pathlib.Path, default=root / "outputs")
     parser.add_argument("--interval", type=float, default=0.5,
                         help="每筆間隔秒數；0 可快速驗收")
+    parser.add_argument("--no-ollama", action="store_true",
+                        help="僅使用本機規則模板，不連線 Ollama")
+    parser.add_argument("--chat", action="store_true",
+                        help="直接開啟已保存監測紀錄的互動問答")
     args = parser.parse_args()
     output = console.Console()
     if not math.isfinite(args.interval) or args.interval < 0:
         parser.error("播放間隔必須為大於或等於 0 的有限數值。")
+    if args.chat and args.no_ollama:
+        parser.error("互動問答需要 Ollama，不能同時使用 --no-ollama。")
     try:
-        run(args.csv, args.output_dir, args.interval, output)
-    except (OSError, ValueError) as error:
+        if args.chat:
+            chat.run_chat(history_store.HistoryStore(args.output_dir), output)
+            return
+        summary = run(args.csv, args.output_dir, args.interval, output,
+                      use_ollama=not args.no_ollama)
+        if (not args.no_ollama and summary["status"] == "finished"
+                and output.is_terminal and sys.stdin.isatty()):
+            chat.run_chat(history_store.HistoryStore(args.output_dir), output)
+    except (OSError, ValueError, sqlite3.Error) as error:
         output.print("無法完成監測：", str(error), style="red", markup=False)
         raise SystemExit(1) from error
 

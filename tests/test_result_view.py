@@ -72,6 +72,29 @@ class ResultViewTest(unittest.TestCase):
         self.assertIn("尚無事件紀錄", document)
         self.assertNotIn("<dd>正常</dd>", document)
 
+    def test_contextual_advice_is_visible_and_escaped_with_or_without_work_order(self):
+        injected = '<script>alert("摘要")</script>'
+        contextual = {"situation": injected, "inspection_reason": "先核對現場讀值。",
+                      "next_step": "若現場也異常，通知負責人；若不同，確認回報通道。",
+                      "as_of": "2026-11-07 17:00:00", "source": "Ollama 地端模型"}
+        order = {"id": "WO-E0001", "event_id": "E0001", "priority": "優先檢查",
+                 "problem": "溫度需要確認", "event_status": "active", "status": "draft",
+                 "actions": ["核對現場溫度"], "causes": ["冷卻狀態待確認"],
+                 "created_at": contextual["as_of"], **contextual}
+        event = {"id": "E0002", "level": 1, "start_time": contextual["as_of"],
+                 "status": "active", "advice": {"title": "AOI需要確認", **contextual}}
+        summary = {"status": "finished", "active_events": 2, "last_state": None}
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "results.html"
+            result_view.write_results_page(path, summary, [event], [order])
+            document = path.read_text()
+        page = PageParser()
+        page.feed(document)
+        self.assertNotIn("script", page.tags)
+        self.assertEqual(document.count(html.escape(injected, quote=True)), 3)
+        self.assertEqual(document.count("查核後處置"), 2)
+        self.assertIn("建議依據回報時間", document)
+
 
 if __name__ == "__main__":
     unittest.main()

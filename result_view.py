@@ -3,6 +3,7 @@
 import html
 import pathlib
 
+import advice
 import monitor
 
 
@@ -22,6 +23,7 @@ h1 { margin:0 0 8px; font-size:1.8rem; }
 h2 { margin:32px 0 12px; font-size:1.25rem; }
 p { margin:8px 0; }
 .muted,dt { color:var(--muted); }
+.operator-text { white-space:pre-wrap; }
 .status { display:flex; flex-wrap:wrap; gap:12px 32px; margin:20px 0; }
 .status div { min-width:130px; }
 dt { font-size:.9rem; }
@@ -55,6 +57,15 @@ def escaped(value) -> str:
     return html.escape(str(value) if value is not None else "待確認", quote=True)
 
 
+def context_section(value: dict) -> str:
+    """呈現模型已驗證的情境與分流，標示所依據的回報時間。"""
+    parts = [f"<p><strong>{label}</strong>：{escaped(value[field])}</p>"
+             for field, label in advice.CONTEXT_FIELDS if field in value]
+    if parts and value.get("as_of"):
+        parts.append(f'<p class="muted">建議依據回報時間：{escaped(value["as_of"])}</p>')
+    return "".join(parts)
+
+
 def work_order_section(order: dict) -> str:
     """呈現優先檢查項目與可展開的工單完整步驟。"""
     actions = order["actions"]
@@ -62,17 +73,34 @@ def work_order_section(order: dict) -> str:
     causes = "".join(f"<li>{escaped(cause)}</li>" for cause in order["causes"])
     priority_class = "urgent" if order["priority"] == "緊急" else ""
     status = STATUS_NAMES[order["event_status"]]
+    context = context_section(order)
+    if order.get("revision", 0):
+        context = (
+            f'<p class="operator-text"><strong>工單說明（使用者確認修訂）</strong>：'
+            f'{escaped(order.get("operator_description", order.get("recommendation", "")))}</p>'
+            f'<p class="operator-text"><strong>現場備註（人員回報）</strong>：{escaped(order.get("operator_notes") or "無")}</p>'
+            f'<p class="muted">第 {int(order["revision"])} 版 · '
+            f'{escaped(order["revised_at"])}；原始告警與量測證據保留。</p>')
+    preview = (f'<span class="preview">{escaped(order["situation"])}</span>'
+               if order.get("situation") else "")
+    if order.get("operator_description"):
+        preview = f'<span class="preview">{escaped(order["operator_description"].splitlines()[0])}</span>'
+    revision = f" · 修訂第 {int(order['revision'])} 版" if order.get("revision", 0) else ""
+    source_label = "原始建議來源" if order.get("revision", 0) else "建議來源"
     return f"""
     <details class="order" id="{escaped(order['id'])}">
       <summary><span class="priority {priority_class}">{escaped(order['priority'])}</span>
         <strong>{escaped(order['problem'])}</strong>
+        {preview}
         <span class="preview">優先檢查：{escaped(actions[0])}</span>
-        <span class="preview muted">{escaped(order['id'])}　工單：草稿待確認　告警：{escaped(status)}</span>
+        <span class="preview muted">{escaped(order['id'])}{revision}　工單：草稿待確認　告警：{escaped(status)}</span>
       </summary>
       <div class="content">
+        {context}
         <p><strong>檢查步驟</strong></p><ol>{steps}</ol>
         <p><strong>可能原因，待現場確認</strong></p><ul>{causes}</ul>
         <p class="muted">首次提醒資料時間：{escaped(order['created_at'])}</p>
+        <p class="muted">{source_label}：{escaped(order.get('source', '本機規則模板'))}</p>
         <p>請機台負責人確認後，依工廠流程安排檢查。告警恢復不代表維修完成。</p>
       </div>
     </details>"""
@@ -99,9 +127,13 @@ def write_results_page(path: pathlib.Path, summary: dict,
         order_id = order_by_event.get(event["id"])
         link = (f'<a href="#{escaped(order_id)}">{escaped(order_id)}</a>'
                 if order_id else "—")
+        title = escaped(event["advice"]["title"])
+        if not order_id and event["advice"].get("situation"):
+            title = (f'<details><summary>{title}</summary>{context_section(event["advice"])}'
+                     f'<p class="muted">建議來源：{escaped(event["advice"]["source"])}</p></details>')
         event_rows.append(
             f'<tr><td class="time">{escaped(event["start_time"])}</td>'
-            f'<td>{escaped(event["advice"]["title"])}</td>'
+            f'<td>{title}</td>'
             f'<td class="risk-{int(event["level"])}">{escaped(monitor.LEVEL_NAMES[event["level"]])}</td>'
             f'<td>{escaped(STATUS_NAMES[event["status"]])}</td><td>{link}</td></tr>')
     event_content = (f"""<div class="table-wrap"><table>
@@ -140,6 +172,7 @@ def write_results_page(path: pathlib.Path, summary: dict,
 <p>未解除提醒：{int(summary['active_events'])} 件。工單須經現場確認，告警恢復不代表維修完成。</p></div>
 <section id="orders"><h2>待確認工單</h2>{orders}</section>
 <section id="events"><h2>事件紀錄</h2>{event_content}</section>
-<footer>本頁為本次執行的本機結果摘要，可離線開啟。詳細逐筆紀錄另存於同一資料夾。</footer>
+<footer>本頁為本次執行的本機結果摘要，可離線開啟。詳細逐筆紀錄另存於同一資料夾。
+建議來源：{escaped(summary.get('advice_source', '本機規則模板'))}。</footer>
 </main></body></html>"""
     path.write_text(body, encoding="utf-8")
