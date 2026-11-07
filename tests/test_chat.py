@@ -106,24 +106,102 @@ class PostMonitorChatTest(unittest.TestCase):
         self.assertEqual(latest_order["revision"], 0)
 
     def test_read_answer_requires_a_tool_and_valid_record_reference(self):
-        reply = {"answer": "溫度事件先出現模型警告，之後才嚴格超標。",
-                 "references": [self.run_id + "/E0005"]}
+        reply = {"fact_ids": ["lead_minutes"]}
         replies = [call("query_history", {"keyword": "E0005", "purpose": "查詢"}),
                    {"message": {"content": json.dumps(reply), "role": "assistant"}}]
         with mock.patch.object(self.session.client, "request", side_effect=replies):
             result = self.session.ask("查詢溫度事件")
         self.assertIn("E0005", result["sources"][0])
-        reply["references"] = ["unknown/event"]
+        self.assertIn("提前 9 分鐘", result["answer"])
+        reply["fact_ids"] = ["unknown/event"]
         replies[-1]["message"]["content"] = json.dumps(reply)
         with mock.patch.object(self.session.client, "request", side_effect=replies), self.assertRaises(ValueError):
             self.session.ask("查詢溫度事件")
+
+    def test_free_text_cannot_invent_repair_state_or_warning_minutes(self):
+        reply = {"answer": "WO-E0005 已完成派工並已修復；模型提早 99 分鐘預警。",
+                 "references": [self.run_id + "/WO-E0005"]}
+        replies = [call("query_history", {"keyword": "E0005", "purpose": "查詢"}),
+                   {"message": {"role": "assistant", "content": json.dumps(reply)}}]
+        with mock.patch.object(self.session.client, "request", side_effect=replies), self.assertRaises(ValueError):
+            self.session.ask("查詢溫度工單狀態及預警時間")
+
+    def test_runs_decodes_each_snapshot_once(self):
+        with mock.patch("factory_agent.history_store.json.loads", wraps=json.loads) as decode:
+            runs = self.store.runs()
+        self.assertEqual(decode.call_count, len(runs))
+        self.assertEqual(runs[0]["monitored_rows"], 250)
+
+    def test_fact_selection_keeps_record_times_minutes_and_draft_state(self):
+        reply = {"fact_ids": ["timeline:first_model_warning", "timeline:first_strict",
+                              "lead_minutes", "order:WO-E0005"]}
+        replies = [call("query_history", {"keyword": "E0005", "purpose": "查詢"}),
+                   {"message": {"role": "assistant", "content": json.dumps(reply)}}]
+        with mock.patch.object(self.session.client, "request", side_effect=replies):
+            result = self.session.ask("查詢 E0005 的預警時間與工單狀態")
+        for expected in ("17:00:00", "17:09:00", "提前 9 分鐘", "待確認草稿"):
+            self.assertIn(expected, result["answer"])
+        self.assertTrue(all(self.run_id in source for source in result["sources"]))
+
+    def test_handoff_always_includes_program_counts_and_workflow_status(self):
+        replies = [call("handoff_summary", {}),
+                   {"message": {"role": "assistant", "content": json.dumps(
+                       {"fact_ids": ["order:WO-E0005"]})}}]
+        with mock.patch.object(self.session.client, "request", side_effect=replies):
+            result = self.session.ask("整理交班摘要")
+        for expected in ("危急 2", "草稿 5 份", "告警已恢復 15 件", "不代表維修完成"):
+            self.assertIn(expected, result["answer"])
+
+    def test_default_run_is_pinned_for_queries_and_handoff(self):
+        self.store.save(self.proposal("舊批特有備註"))
+        main.run(CSV, self.root, 0, console.Console(file=io.StringIO()))
+        latest = self.store.runs()[0]["run_id"]
+        for name in ("query_history", "handoff_summary"):
+            args = {"run_id": self.run_id}
+            if name == "query_history":
+                args.update(keyword="WO-E0005", purpose="查詢")
+            replies = [call(name, args), {"message": {"role": "assistant", "content": json.dumps(
+                {"fact_ids": ["order:WO-E0005"]})}}]
+            with self.subTest(name=name), mock.patch.object(self.session.client, "request", side_effect=replies):
+                result = self.session.ask("查詢 WO-E0005" if name == "query_history" else "交班摘要")
+            self.assertTrue(all(latest in source for source in result["sources"]))
+            self.assertNotIn("舊批特有備註", result["answer"])
+
+    def test_explicit_run_id_overrides_model_choice_and_default(self):
+        self.store.save(self.proposal("明確指定的舊批備註"))
+        main.run(CSV, self.root, 0, console.Console(file=io.StringIO()))
+        latest = self.store.runs()[0]["run_id"]
+        replies = [call("query_history", {"run_id": latest, "keyword": "WO-E0005", "purpose": "查詢"}),
+                   {"message": {"role": "assistant", "content": json.dumps(
+                       {"fact_ids": ["notes:WO-E0005"]})}}]
+        with mock.patch.object(self.session.client, "request", side_effect=replies):
+            result = self.session.ask(f"查詢批次 {self.run_id} 的 WO-E0005 備註")
+        self.assertIn("明確指定的舊批備註", result["answer"])
+        self.assertIn(self.run_id, result["sources"][0])
+
+    def test_default_edit_preview_uses_latest_batch_and_queried_revision(self):
+        self.store.save(self.proposal("舊批備註保留"))
+        main.run(CSV, self.root, 0, console.Console(file=io.StringIO()))
+        latest = self.store.runs()[0]["run_id"]
+        args = {"run_id": self.run_id, "work_order_id": "WO-E0005", "expected_revision": 0,
+                "notes": "本次查核中"}
+        replies = [call("query_history", {"run_id": self.run_id, "keyword": "WO-E0005", "purpose": "修改草稿"}),
+                   call("propose_work_order_edit", args)]
+        with mock.patch.object(self.session.client, "request", side_effect=replies):
+            result = self.session.ask("把 WO-E0005 的現場備註改成查核中")
+        self.assertEqual(result["proposal"]["run_id"], latest)
+        self.assertEqual(result["proposal"]["expected_revision"], 0)
+        old_order = next(order for order in self.store.load(self.run_id)["orders"] if order["id"] == "WO-E0005")
+        self.assertEqual(old_order["operator_notes"], "舊批備註保留")
+        args["expected_revision"] = 1
+        with mock.patch.object(self.session.client, "request", side_effect=replies), self.assertRaises(ValueError):
+            self.session.ask("把 WO-E0005 的現場備註改成查核中")
 
     def test_previous_run_is_selected_even_if_model_supplies_latest_id(self):
         self.store.save(self.proposal())
         main.run(CSV, self.root, 0, console.Console(file=io.StringIO()))
         latest = self.store.runs()[0]["run_id"]
-        reply = {"answer": "前一次執行的工單為第 1 版，備註為現場溫度正常。",
-                 "references": [self.run_id + "/WO-E0005"]}
+        reply = {"fact_ids": ["notes:WO-E0005"]}
         replies = [call("query_history", {"run_id": latest, "keyword": "WO-E0005", "purpose": "查詢"}),
                    {"message": {"role": "assistant", "content": json.dumps(reply)}}]
         with mock.patch.object(self.session.client, "request", side_effect=replies):
@@ -181,13 +259,13 @@ class PostMonitorChatTest(unittest.TestCase):
                               if order["id"] == "WO-E0005")["revision"], 0)
 
     def test_invalid_answer_json_is_retried_with_the_same_record_sources(self):
-        reply = {"answer": "溫度工單仍為草稿待確認。", "references": [self.run_id + "/WO-E0005"]}
+        reply = {"fact_ids": ["order:WO-E0005"]}
         replies = [call("query_history", {"keyword": "WO-E0005", "purpose": "查詢"}),
                    {"message": {"role": "assistant", "content": "1. 工單仍為草稿。"}},
                    {"message": {"role": "assistant", "content": json.dumps(reply)}}]
         with mock.patch.object(self.session.client, "request", side_effect=replies) as request:
             result = self.session.ask("查詢 WO-E0005")
-        self.assertEqual(result["answer"], reply["answer"])
+        self.assertIn("待確認草稿", result["answer"])
         self.assertEqual(request.call_count, 3)
         self.assertIn("format", request.call_args.args[1])
 
@@ -215,12 +293,13 @@ class PostMonitorChatTest(unittest.TestCase):
         self.assertEqual(request.call_count, 1)
 
     def test_answer_and_search_use_traditional_chinese(self):
-        reply = {"answer": "关注温度事件，工单仍待确认。", "references": [self.run_id + "/history"]}
+        self.store.save(self.proposal("现场温度正常"))
+        reply = {"fact_ids": ["notes:WO-E0005"]}
         replies = [call("query_history", {"keyword": "温度", "purpose": "查詢"}),
                    {"message": {"role": "assistant", "content": json.dumps(reply)}}]
         with mock.patch.object(self.session.client, "request", side_effect=replies):
             result = self.session.ask("查詢溫度事件")
-        self.assertEqual(result["answer"], "關注溫度事件，工單仍待確認。")
+        self.assertIn("現場溫度正常", result["answer"])
 
     def test_cancel_exit_and_save_use_explicit_confirmation(self):
         for decision in ("取消", "離開", "儲存"):

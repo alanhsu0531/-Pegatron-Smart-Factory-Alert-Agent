@@ -33,6 +33,7 @@ SYSTEM = (
     "get_playbook 各一次，盡量在同一輪呼叫。工具不需要參數。"
     "依已取得的量測、時間趨勢與資料品質，排序根因，產生簡短繁體中文處置說明。"
     "根因只是待現場確認的方向，不可確診；風險等級由程式決定。"
+    "risk是本事件歷史最高風險，current_risk是當前觸發等級；以observations說明現在，勿將歷史超標當成現在超標。"
     "只回傳指定 JSON，不輸出推論過程，不新增原因、維修動作或故障機率。"
     "取得三個工具後，回傳 event_id、cause_order（C1/C2 各一次）、evidence_refs、"
     "action_refs、situation、inspection_reason、next_step。"
@@ -61,6 +62,17 @@ CHECK_TARGETS = ("負載", "轉速", "冷卻", "風扇", "散熱", "潤滑", "�
 def signature(event: dict) -> tuple:
     """辨識風險、事件類型或受影響感測器是否已改變。"""
     return event["level"], event["kind"], tuple(event.get("sensors", []))
+
+
+def json_safe(value):
+    """將工具與紀錄中的非有限浮點值轉為 None，不修改原始物件。"""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(item) for item in value]
+    return value
 
 
 def observed_facts(reading: dict, history: list) -> dict:
@@ -118,8 +130,13 @@ def context_snapshot(event: dict, reading: dict, history) -> dict:
         timestamp = record["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
         if record["row"] > reading["row"] or timestamp > reading["timestamp"]:
             raise ValueError("Agent 不可取得未來資料。")
-        recent.append({"timestamp": timestamp, "label": record["label"],
-                       **{sensor: record[sensor] for sensor in monitor.SENSORS}})
+        entry = {"timestamp": timestamp, "label": record["label"],
+                 **{sensor: record[sensor] for sensor in monitor.SENSORS}}
+        invalid = [sensor for sensor in monitor.SENSORS if record[sensor] is not None
+                   and (not math.isfinite(record[sensor]) or record[sensor] == 999)]
+        if invalid:
+            entry["invalid_sensors"] = invalid
+        recent.append(json_safe(entry))
     card = advice.make_advice(event["kind"], event.get("sensors", []))
     evidence = [{"id": f"F{i}", "text": reason}
                 for i, reason in enumerate(event["evidence"], 1)]
@@ -141,6 +158,9 @@ def context_snapshot(event: dict, reading: dict, history) -> dict:
         "get_event": {
             "event_id": event["id"], "kind": event["kind"],
             "risk": monitor.LEVEL_NAMES[event["level"]],
+            "current_risk": monitor.LEVEL_NAMES[event.get("current_level", event["level"])],
+            "peak_evidence": event.get("peak_evidence", event["evidence"]),
+            "peak_time": event.get("peak_time", event.get("evidence_time", reading["timestamp"])),
             "start_time": event["start_time"], "as_of": reading["timestamp"],
             "evidence_row": event.get("evidence_row", reading["row"]),
             "evidence_time": event.get("evidence_time", reading["timestamp"]),
@@ -447,6 +467,11 @@ class LocalAgent:
         self.disabled_reason = None
         threading.Thread(target=self._work, daemon=True).start()
 
+    def _write_trace(self, trace: dict) -> None:
+        """保存有效 JSON；模型或工具中的非有限值不影響主監測。"""
+        self.trace_stream.write(json.dumps(json_safe(trace), ensure_ascii=False, allow_nan=False) + "\n")
+        self.trace_stream.flush()
+
     def _work(self) -> None:
         while True:
             job = self.jobs.get()
@@ -486,11 +511,11 @@ class LocalAgent:
                 fallback["source"] = "規則備援"
                 tracker.set_advice(event["id"], fallback)
                 self.fallbacks += 1
-                self.trace_stream.write(json.dumps({
+                self._write_trace({
                     "event_id": event["id"], "as_of": reading["timestamp"],
                     "status": "fallback", "reason": self.disabled_reason,
                     "requests": 0, "tools": [],
-                }, ensure_ascii=False) + "\n")
+                })
                 continue
             context = context_snapshot(event, reading, history)
             deadline = time.monotonic() + TIMEOUT
@@ -533,8 +558,7 @@ class LocalAgent:
                 tracker.set_advice(event_id, fallback)
                 if not self.client.checked:
                     self.disabled_reason = trace["reason"]
-            self.trace_stream.write(json.dumps(trace, ensure_ascii=False, allow_nan=False) + "\n")
-            self.trace_stream.flush()
+            self._write_trace(trace)
         self._status(tracker)
 
     def _status(self, tracker: monitor.EventTracker) -> None:
@@ -559,11 +583,10 @@ class LocalAgent:
                     time.sleep(0.05)
         else:
             for event_id, _, _ in self.pending.values():
-                self.trace_stream.write(json.dumps({
+                self._write_trace({
                     "event_id": event_id, "status": "cancelled",
                     "reason": "播放已停止，保留已有規則建議。",
-                }, ensure_ascii=False) + "\n")
-            self.trace_stream.flush()
+                })
             self.pending.clear()
             tracker.agent_pending = set()
             tracker.agent_status = "已停止 · 保留已完成建議"

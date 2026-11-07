@@ -140,6 +140,23 @@ class MonitorTest(unittest.TestCase):
             self.assertEqual(reading["unchanged_samples"]["vibration"], 1)
         self.assertEqual(tracker.work_orders, {})
 
+    def test_current_sensor_changes_without_losing_peak_risk(self):
+        detector = monitor.Monitor(self.baseline)
+        tracker = monitor.EventTracker()
+        for index in range(1, 9):
+            values = (53.0, 1.02, 0.03) if index <= 3 else (47.5, 1.06, 0.03)
+            reading = detector.analyze(self.record(index, values))
+            tracker.update(reading)
+        event = tracker.active["equipment"]
+        self.assertEqual(event["level"], 3)
+        self.assertEqual(event["kind"], "pressure")
+        self.assertEqual(event["sensors"], ["pressure"])
+        self.assertEqual(event["current_level"], 1)
+        self.assertEqual(event["sensor_history"], ["temp", "pressure"])
+        self.assertEqual(event["evidence_row"], reading["row"])
+        self.assertIn("temp", " ".join(event["peak_evidence"]))
+        self.assertIn("壓力", tracker.work_orders[event["id"]]["problem"])
+
     def test_model_persistence_uses_only_complete_original_values(self):
         detector = monitor.Monitor(self.baseline)
         with mock.patch.object(detector, "score", return_value=100.0):
