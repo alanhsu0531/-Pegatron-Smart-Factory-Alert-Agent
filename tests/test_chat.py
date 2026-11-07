@@ -11,9 +11,9 @@ from unittest import mock
 
 from rich import console
 
-import chat
-import history_store
 import main
+from factory_agent import chat
+from factory_agent import history_store
 
 
 CSV = pathlib.Path(__file__).resolve().parents[1] / "data/sensor_data.csv"
@@ -241,7 +241,7 @@ class PostMonitorChatTest(unittest.TestCase):
         self.assertIn("&lt;script&gt;", document)
         self.assertIn("修訂第 1 版", document)
         proposal = self.store.propose(self.run_id, "WO-E0005", 1, {"notes": "再次回報"}, "修改備註")
-        with mock.patch("history_store.result_view.write_results_page", side_effect=OSError("read-only")):
+        with mock.patch("factory_agent.history_store.result_view.write_results_page", side_effect=OSError("read-only")):
             saved = self.store.save(proposal)
         self.assertIsNone(saved["path"])
         self.assertEqual(next(item for item in self.store.load()["orders"] if item["id"] == "WO-E0005")["revision"], 2)

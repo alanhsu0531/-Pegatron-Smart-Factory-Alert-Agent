@@ -6,7 +6,7 @@ import pathlib
 import tempfile
 import unittest
 
-import result_view
+from factory_agent import result_view
 
 
 class PageParser(parser.HTMLParser):

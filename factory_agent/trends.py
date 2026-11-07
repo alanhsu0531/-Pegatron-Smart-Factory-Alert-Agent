@@ -8,8 +8,8 @@ from rich import rule
 from rich import table
 from rich import text
 
-import monitor
-import theme
+from factory_agent import monitor
+from factory_agent import theme
 
 
 WINDOW_SAMPLES = 60

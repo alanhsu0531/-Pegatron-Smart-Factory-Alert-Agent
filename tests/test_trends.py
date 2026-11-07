@@ -10,8 +10,8 @@ from rich import cells
 from rich import console
 
 import main
-import monitor
-import trends
+from factory_agent import monitor
+from factory_agent import trends
 
 
 CSV = pathlib.Path(__file__).resolve().parents[1] / "data" / "sensor_data.csv"
