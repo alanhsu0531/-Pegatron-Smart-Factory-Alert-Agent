@@ -4,13 +4,165 @@
 
 主種子展示結果：溫度漂移在 **17:00 出現模型警告，比 17:09 首次嚴格超標提前 9 分鐘**。這是模擬資料時間的提前量，評估範圍與限制見下文。
 
-- [一、專案架構與實作細節](#architecture)：資料、判定、Agent、儲存與驗證。
-- [二、如何使用系統](#usage)：安裝、啟動、問答、結果閱讀與重現。
+- [一、如何使用系統](#usage)：安裝、啟動、問答、結果閱讀與重現。
+- [二、專案架構與實作細節](#architecture)：資料、判定、Agent、儲存與驗證。
 - 面試文件：[作業說明](docs/assignment%20explanation.md)、[背景調查](docs/background%20research.md)、[協作計畫與實作清單](docs/project%20plan.md)。
+
+<a id="usage"></a>
+
+## 一、如何使用系統
+
+### 1. 取得專案並安裝
+
+驗收環境為 **macOS、Python 3.9.6**。以下使用 macOS／Linux shell；其他作業系統與 Python 版本尚未完成驗收。
+
+```bash
+git clone https://github.com/alanhsu0531/-Pegatron-Smart-Factory-Alert-Agent.git smart-factory-alert-agent
+cd smart-factory-alert-agent
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+CSV 已包含於儲存庫，首次使用不必重新生成。以下指令均在專案根目錄、已啟用 `.venv` 的終端執行；後續重新開啟終端時，先執行 `source .venv/bin/activate`。
+
+### 2. 先跑完整純終端流程
+
+```bash
+python main.py --no-ollama
+```
+
+預設每 0.5 秒讀下一筆，250 筆監測約需 125 秒，另加計算與畫面更新時間。無需安裝 Ollama，即可看到感測器、風險、三張趨勢、檢查建議及工單草稿；結束後產生 `outputs/results.html`，直接用瀏覽器開啟。
+
+```bash
+python main.py --no-ollama --interval 0
+```
+
+這條指令快速重播，適合檢查完整輸出；若要觀察畫面變化，使用預設間隔或較大的值。
+
+### 3. 啟用地端 AI 與監測後問答
+
+依 [Ollama 官方安裝說明](https://docs.ollama.com/quickstart)安裝並啟動服務，再下載本專案指定的[模型](https://ollama.com/library/qwen3%3A4b-instruct)：
+
+```bash
+ollama pull qwen3:4b-instruct
+ollama list
+python main.py
+```
+
+macOS 可直接開啟 Ollama App；若採 CLI 啟動且服務尚未執行，在另一個終端執行 `ollama serve` 並保持開啟。專案固定連線本機 11434 埠，不需 API 金鑰，也不要求關閉 Ollama 的全域雲端功能。
+
+初始化完成後照常播放資料。畫面中的「規則建議 · AI 整理中」代表先用規則處置，待模型完成後更新。完整播放結束且輸入、輸出均為互動終端時，會自動進入問答；可輸入「離開」結束。模型未就緒或逾時時，監測仍保留規則建議；問答則提示錯誤並保留紀錄。
+
+模型速度依硬體與執行狀況而異，快速播放不保證每項解說在事件結束前完成。結果頁與工單會保留已通過驗證的解說及依據時間。
+
+### 4. 怎麼讀終端畫面
+
+| 區域 | 意義 |
+| --- | --- |
+| 設備綜合評估 | 門檻、模型、AOI、持續時間及待解除事件的整合等級 |
+| AOI 設備監測 | 直接呈現本筆 `label`，與整合評估分開顯示 |
+| 資料品質 | 本筆缺值、無效值與可否暫補 |
+| 運轉觀察 | 正式分數達 98 顯示「與平常不同」；其餘為「與平常相近」，暫補或不足另行提示 |
+| 感測器表格 | 原始回報、作業條件及回報是否有效／暫補 |
+| 近一小時趨勢 | 最近 60 筆原始量測；紅虛線為嚴格邊界，超標另標記；缺值與無效值留斷點 |
+| 處置重點 | 優先事件的檢查步驟，或 AI 情境、理由與查核分流 |
+
+例如 AOI 可顯示正常，但設備仍因溫度超標而警告；事件進入恢復觀察時，當筆量測已正常，設備等級仍會暫時保留。畫面採固定欄寬，較矮視窗會縮短處置顯示；完整內容保留於 HTML。請在一般互動終端觀看，重新導向到檔案時不繪製即時儀表板。
+
+### 5. 直接查歷史、交班與修改草稿
+
+至少完成一次監測後，隨時執行：
+
+```bash
+python main.py --chat
+```
+
+| 目的 | 可輸入的問題 |
+| --- | --- |
+| 查事件 | `查詢溫度事件` |
+| 查提前量 | `查詢 E0005 的模型警告、首次嚴格超標時間與提前分鐘` |
+| 交班 | `整理本次交班摘要` |
+| 前一批 | `整理上一批交班摘要` |
+| 修改草稿 | `修改 WO-E0005，將工單說明改成適合交班閱讀的三個重點` |
+| 加現場備註 | `修改 WO-E0005，現場備註加入：已通知當班負責人，等待核對量測` |
+
+`E0005`／`WO-E0005` 是標準主種子流程的範例；請以實際結果中的編號為準。只輸入 `修改 WO-E0005` 時，系統會先詢問修改內容。預覽出現後，輸入 `儲存` 或 `取消`；儲存新增一版草稿，不代表派工。
+
+若監測使用自訂輸出目錄，問答也要指定相同目錄，例如 `python main.py --chat --output-dir outputs/demo`。所有問題只操作指定批次的既有紀錄，不提供一般知識庫或任意工具問答。
+
+### 6. 指令參數與中斷
+
+| 參數 | 預設 | 用途 |
+| --- | --- | --- |
+| `--csv` | 專案內 `data/sensor_data.csv` | 改用相同五欄、500 筆、每分鐘一筆的 CSV |
+| `--output-dir` | 專案內 `outputs/` | 指定結果與歷史庫目錄 |
+| `--interval` | `0.5` | 每筆暫停秒數，0 為快速重播，須為有限非負數 |
+| `--no-ollama` | 未啟用此旗標 | 使用規則建議、不連線模型、不自動進入問答 |
+| `--chat` | 未啟用此旗標 | 只開啟已保存紀錄的問答，不重播 CSV |
+
+例如以一秒間隔另存一批純終端結果：
+
+```bash
+python main.py --no-ollama --interval 1 --output-dir outputs/demo
+```
+
+播放中按 `Ctrl+C` 會停止、保存已處理的部分結果，且不自動進入問答。不要同時將多個監測程序寫入同一個輸出目錄。
+
+<a id="results"></a>
+
+### 7. 結果存在哪裡，會不會覆蓋
+
+| 檔案 | 內容與寫入時機 |
+| --- | --- |
+| `outputs/results.html` | 中文摘要、事件與維修工單；結束或中斷時產生，可離線開啟 |
+| `outputs/readings.jsonl` | 每筆風險、分數、原始值與品質狀態；執行中逐筆寫入 |
+| `outputs/events.json` | 事件、當前與歷史風險證據、解說；結束或中斷時保存 |
+| `outputs/work_orders.json` | 工單草稿；結束保存，確認最新批次的人工修訂時更新 |
+| `outputs/summary.json` | 本次批次 ID、筆數與執行摘要；結束或中斷時保存 |
+| `outputs/history.sqlite3` | 每次執行的快照、逐筆紀錄與人工修訂版本 |
+| `outputs/agent_trace.jsonl` | 本次監測的模型請求、工具與採用／備援紀錄 |
+| `outputs/chat_trace.jsonl` | 問答與工具紀錄；問答期間追加 |
+| `outputs/history/<批次 ID>/results.html` | 人工確認修訂後產生的該批結果頁 |
+| `outputs/model_evaluation.json` | 另行執行模型評估後產生的技術結果 |
+
+**同一輸出目錄的最新 JSON／HTML 會在下一次監測更新**；逐筆與監測 Agent 紀錄從開始時重建，事件與摘要等在結束時更新，執行途中它們可能仍屬上一批。SQLite 會新增批次並保留原始快照及修訂，問答紀錄持續追加。需要每次獨立檔案時使用不同 `--output-dir`。
+
+要保留跨批次紀錄及人工備註，請備份 `history.sqlite3`；若要連同原始模型回覆與結果頁一起保留，備份整個輸出目錄。生成器可重現固定資料；重新推論不能保證逐字重現舊模型文字。`outputs/` 已由 Git 忽略，不上傳個人備註與執行紀錄。
+
+### 8. 重現資料、評估與測試
+
+重建資料時可另存，避免覆寫已驗收版本：
+
+```bash
+python generate_data.py --output-dir outputs/regenerated-data
+```
+
+使用相同套件版本與固定 seed 可重現 CSV。`generation_metadata.json` 另含 Python 版本，跨 Python 版本不保證整份註記逐位元相同。
+
+```bash
+python evaluate_model.py
+python -m unittest discover -s tests -q
+```
+
+評估指令使用儲存庫內的標準資料，將結果寫到 **專案根目錄下**的 `outputs/model_evaluation.json`；不隨 `main.py --output-dir` 改變。測試使用暫存資料，不要求實際 Ollama 服務，也不以單元測試取代實際模型驗收。
+
+### 9. 常見狀況
+
+| 狀況 | 處理方式 |
+| --- | --- |
+| 找不到 Python 套件 | 啟用 `.venv`，使用同一個 Python 執行 `python -m pip install -r requirements.txt` |
+| 指定本機模型尚未就緒 | 開啟 Ollama，執行 `ollama pull qwen3:4b-instruct`，並用 `ollama list` 確認模型名稱 |
+| 模型不支援工具或無法連線 | 核對指定模型及本機 11434 服務；監測可先加 `--no-ollama` 執行 |
+| 問答提示沒有監測紀錄 | 先完成一次監測；核對 `--chat` 的 `--output-dir` 與先前相同 |
+| 模型逾時或回覆未採用 | 保留規則建議與既有紀錄；問答可縮短問題後再試 |
+| 工單已有新版本 | 重新查詢並建立預覽，再確認儲存 |
+
+實作與逐階段驗收過程見[專案計畫](docs/project%20plan.md)。正式 PDF 簡報、2–3 頁技術報告及展示截圖另行準備。
 
 <a id="architecture"></a>
 
-## 一、專案架構與實作細節
+## 二、專案架構與實作細節
 
 ### 1. 整體流程
 
@@ -184,166 +336,3 @@ score ≥ 98：模型關注
 Precision、Recall、F1 評估的是「模型單筆分數達 98」對突發、溫度漂移與灰區聯合事件窗口的提醒，不是整合風險準確率，也不是對 label 的同一組指標；JSON 另列與 label 的比較。事件窗口包含漂移初期與回落階段。主種子已參與開發，這些數字不代表未見資料的泛化能力。
 
 本專案是單機、單工況的統計模擬與唯讀 CSV 重播，未連接真實 PLC、AOI 或 CMMS，也未實作 RUL、動態重訓或知識庫問答。分鐘級單一振動數值不足以診斷軸承頻譜故障；兩分鐘熱延遲與欄位相關性是模擬假設。工業背景與現場差異見[背景調查](docs/background%20research.md)。
-
-### 9. AI 工具如何參與開發
-
-| 工具／方式 | 工作角色 | 可檢視證據 |
-| --- | --- | --- |
-| Coding assistant（Codex） | 需求拆解、資料生成、程式與測試、除錯、程式整理及文件撰寫 | 原始碼、測試、Git 提交與 PR |
-| `grill-me`、`grilling` skills | 需求問答、計畫檢驗與盲點挑戰 | [計畫書第 9、10 節](docs/project%20plan.md#9-實作代辦清單) |
-| `code-review` skill | 以 Standards、Spec 兩個方向檢查程式、規格與效率，先報告再由使用者核准修正 | [PR #4](https://github.com/alanhsu0531/-Pegatron-Smart-Factory-Alert-Agent/pull/4) 與回歸測試 |
-| Ollama＋Qwen3 | 系統執行時的地端維修解說、工具選擇、事實排序與工單文字修改 | 本機 `agent_trace.jsonl`、`chat_trace.jsonl` |
-
-協作採「assistant 交付可執行成果 → 使用者審查與階段驗收 → 依回饋修正 → PR」；資料生成及純終端均先經使用者確認，才進入下一階段。自動化涵蓋生成檢查、逐筆判定、事件合併、草稿、結果頁與批次保存，現場決策與工單儲存由人確認。未量測開發工時節省比例；所用開發工具是否符合原作業的免費工具條件，仍須於正式交付說明，不能以本機推論無 API 金鑰取代這項核對。
-
-<a id="usage"></a>
-
-## 二、如何使用系統
-
-### 1. 取得專案並安裝
-
-驗收環境為 **macOS、Python 3.9.6**。以下使用 macOS／Linux shell；其他作業系統與 Python 版本尚未完成驗收。
-
-```bash
-git clone https://github.com/alanhsu0531/-Pegatron-Smart-Factory-Alert-Agent.git smart-factory-alert-agent
-cd smart-factory-alert-agent
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-```
-
-CSV 已包含於儲存庫，首次使用不必重新生成。以下指令均在專案根目錄、已啟用 `.venv` 的終端執行；後續重新開啟終端時，先執行 `source .venv/bin/activate`。
-
-### 2. 先跑完整純終端流程
-
-```bash
-python main.py --no-ollama
-```
-
-預設每 0.5 秒讀下一筆，250 筆監測約需 125 秒，另加計算與畫面更新時間。無需安裝 Ollama，即可看到感測器、風險、三張趨勢、檢查建議及工單草稿；結束後產生 `outputs/results.html`，直接用瀏覽器開啟。
-
-```bash
-python main.py --no-ollama --interval 0
-```
-
-這條指令快速重播，適合檢查完整輸出；若要觀察畫面變化，使用預設間隔或較大的值。
-
-### 3. 啟用地端 AI 與監測後問答
-
-依 [Ollama 官方安裝說明](https://docs.ollama.com/quickstart)安裝並啟動服務，再下載本專案指定的[模型](https://ollama.com/library/qwen3%3A4b-instruct)：
-
-```bash
-ollama pull qwen3:4b-instruct
-ollama list
-python main.py
-```
-
-macOS 可直接開啟 Ollama App；若採 CLI 啟動且服務尚未執行，在另一個終端執行 `ollama serve` 並保持開啟。專案固定連線本機 11434 埠，不需 API 金鑰，也不要求關閉 Ollama 的全域雲端功能。
-
-初始化完成後照常播放資料。畫面中的「規則建議 · AI 整理中」代表先用規則處置，待模型完成後更新。完整播放結束且輸入、輸出均為互動終端時，會自動進入問答；可輸入「離開」結束。模型未就緒或逾時時，監測仍保留規則建議；問答則提示錯誤並保留紀錄。
-
-模型速度依硬體與執行狀況而異，快速播放不保證每項解說在事件結束前完成。結果頁與工單會保留已通過驗證的解說及依據時間。
-
-### 4. 怎麼讀終端畫面
-
-| 區域 | 意義 |
-| --- | --- |
-| 設備綜合評估 | 門檻、模型、AOI、持續時間及待解除事件的整合等級 |
-| AOI 設備監測 | 直接呈現本筆 `label`，與整合評估分開顯示 |
-| 資料品質 | 本筆缺值、無效值與可否暫補 |
-| 運轉觀察 | 正式分數達 98 顯示「與平常不同」；其餘為「與平常相近」，暫補或不足另行提示 |
-| 感測器表格 | 原始回報、作業條件及回報是否有效／暫補 |
-| 近一小時趨勢 | 最近 60 筆原始量測；紅虛線為嚴格邊界，超標另標記；缺值與無效值留斷點 |
-| 處置重點 | 優先事件的檢查步驟，或 AI 情境、理由與查核分流 |
-
-例如 AOI 可顯示正常，但設備仍因溫度超標而警告；事件進入恢復觀察時，當筆量測已正常，設備等級仍會暫時保留。畫面採固定欄寬，較矮視窗會縮短處置顯示；完整內容保留於 HTML。請在一般互動終端觀看，重新導向到檔案時不繪製即時儀表板。
-
-### 5. 直接查歷史、交班與修改草稿
-
-至少完成一次監測後，隨時執行：
-
-```bash
-python main.py --chat
-```
-
-| 目的 | 可輸入的問題 |
-| --- | --- |
-| 查事件 | `查詢溫度事件` |
-| 查提前量 | `查詢 E0005 的模型警告、首次嚴格超標時間與提前分鐘` |
-| 交班 | `整理本次交班摘要` |
-| 前一批 | `整理上一批交班摘要` |
-| 修改草稿 | `修改 WO-E0005，將工單說明改成適合交班閱讀的三個重點` |
-| 加現場備註 | `修改 WO-E0005，現場備註加入：已通知當班負責人，等待核對量測` |
-
-`E0005`／`WO-E0005` 是標準主種子流程的範例；請以實際結果中的編號為準。只輸入 `修改 WO-E0005` 時，系統會先詢問修改內容。預覽出現後，輸入 `儲存` 或 `取消`；儲存新增一版草稿，不代表派工。
-
-若監測使用自訂輸出目錄，問答也要指定相同目錄，例如 `python main.py --chat --output-dir outputs/demo`。所有問題只操作指定批次的既有紀錄，不提供一般知識庫或任意工具問答。
-
-### 6. 指令參數與中斷
-
-| 參數 | 預設 | 用途 |
-| --- | --- | --- |
-| `--csv` | 專案內 `data/sensor_data.csv` | 改用相同五欄、500 筆、每分鐘一筆的 CSV |
-| `--output-dir` | 專案內 `outputs/` | 指定結果與歷史庫目錄 |
-| `--interval` | `0.5` | 每筆暫停秒數，0 為快速重播，須為有限非負數 |
-| `--no-ollama` | 未啟用此旗標 | 使用規則建議、不連線模型、不自動進入問答 |
-| `--chat` | 未啟用此旗標 | 只開啟已保存紀錄的問答，不重播 CSV |
-
-例如以一秒間隔另存一批純終端結果：
-
-```bash
-python main.py --no-ollama --interval 1 --output-dir outputs/demo
-```
-
-播放中按 `Ctrl+C` 會停止、保存已處理的部分結果，且不自動進入問答。不要同時將多個監測程序寫入同一個輸出目錄。
-
-<a id="results"></a>
-
-### 7. 結果存在哪裡，會不會覆蓋
-
-| 檔案 | 內容與寫入時機 |
-| --- | --- |
-| `outputs/results.html` | 中文摘要、事件與維修工單；結束或中斷時產生，可離線開啟 |
-| `outputs/readings.jsonl` | 每筆風險、分數、原始值與品質狀態；執行中逐筆寫入 |
-| `outputs/events.json` | 事件、當前與歷史風險證據、解說；結束或中斷時保存 |
-| `outputs/work_orders.json` | 工單草稿；結束保存，確認最新批次的人工修訂時更新 |
-| `outputs/summary.json` | 本次批次 ID、筆數與執行摘要；結束或中斷時保存 |
-| `outputs/history.sqlite3` | 每次執行的快照、逐筆紀錄與人工修訂版本 |
-| `outputs/agent_trace.jsonl` | 本次監測的模型請求、工具與採用／備援紀錄 |
-| `outputs/chat_trace.jsonl` | 問答與工具紀錄；問答期間追加 |
-| `outputs/history/<批次 ID>/results.html` | 人工確認修訂後產生的該批結果頁 |
-| `outputs/model_evaluation.json` | 另行執行模型評估後產生的技術結果 |
-
-**同一輸出目錄的最新 JSON／HTML 會在下一次監測更新**；逐筆與監測 Agent 紀錄從開始時重建，事件與摘要等在結束時更新，執行途中它們可能仍屬上一批。SQLite 會新增批次並保留原始快照及修訂，問答紀錄持續追加。需要每次獨立檔案時使用不同 `--output-dir`。
-
-要保留跨批次紀錄及人工備註，請備份 `history.sqlite3`；若要連同原始模型回覆與結果頁一起保留，備份整個輸出目錄。生成器可重現固定資料；重新推論不能保證逐字重現舊模型文字。`outputs/` 已由 Git 忽略，不上傳個人備註與執行紀錄。
-
-### 8. 重現資料、評估與測試
-
-重建資料時可另存，避免覆寫已驗收版本：
-
-```bash
-python generate_data.py --output-dir outputs/regenerated-data
-```
-
-使用相同套件版本與固定 seed 可重現 CSV。`generation_metadata.json` 另含 Python 版本，跨 Python 版本不保證整份註記逐位元相同。
-
-```bash
-python evaluate_model.py
-python -m unittest discover -s tests -q
-```
-
-評估指令使用儲存庫內的標準資料，將結果寫到 **專案根目錄下**的 `outputs/model_evaluation.json`；不隨 `main.py --output-dir` 改變。測試使用暫存資料，不要求實際 Ollama 服務，也不以單元測試取代實際模型驗收。
-
-### 9. 常見狀況
-
-| 狀況 | 處理方式 |
-| --- | --- |
-| 找不到 Python 套件 | 啟用 `.venv`，使用同一個 Python 執行 `python -m pip install -r requirements.txt` |
-| 指定本機模型尚未就緒 | 開啟 Ollama，執行 `ollama pull qwen3:4b-instruct`，並用 `ollama list` 確認模型名稱 |
-| 模型不支援工具或無法連線 | 核對指定模型及本機 11434 服務；監測可先加 `--no-ollama` 執行 |
-| 問答提示沒有監測紀錄 | 先完成一次監測；核對 `--chat` 的 `--output-dir` 與先前相同 |
-| 模型逾時或回覆未採用 | 保留規則建議與既有紀錄；問答可縮短問題後再試 |
-| 工單已有新版本 | 重新查詢並建立預覽，再確認儲存 |
-
-實作與逐階段驗收過程見[專案計畫](docs/project%20plan.md)。正式 PDF 簡報、2–3 頁技術報告及展示截圖另行準備。
