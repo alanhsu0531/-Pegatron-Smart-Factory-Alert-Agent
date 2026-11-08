@@ -1,6 +1,6 @@
 # 智慧工廠設備異常預警 AI Agent 專案計畫
 
-更新日期：2026-11-07。依據：[作業說明](assignment%20explanation.md)及已確認需求；操作與架構詳見 [README](../README.md)，協作方式見 [AI 工具使用說明](ai-tool-usage.md)。
+更新日期：2026-11-09。依據：[作業說明](assignment%20explanation.md)及已確認需求；操作與架構詳見 [README](../README.md)，協作方式見 [AI 工具使用說明](ai-tool-usage.md)。
 
 ## 1. 目標與現況
 
@@ -10,9 +10,9 @@
 
 - 資料生成與純終端流程已驗收；Ollama、三項問答及程式結構整理均已實作並合併，最近全套 82 項測試通過。
 - code review 修正已合併至 [PR #4](https://github.com/alanhsu0531/-Pegatron-Smart-Factory-Alert-Agent/pull/4)；重試範圍議題暫緩，其他種子實驗目前不納入。
-- README、作業說明、背景調查與協作計畫已整理；本次加入 AI 工具使用說明與 provider／模型截圖。
-- 後續待辦：正式展示紀錄、PDF 簡報及技術報告；由 Agent 製作，我審核與授權。
-- 免費開發配置：Codex／Claude Code Agent 透過 OmniRoute 使用免費 provider／模型，未使用會員模型推論；系統運作採 Ollama＋Qwen3 地端模型。
+- README、作業說明、背景調查與協作計畫已整理；AI 工具使用說明包含 OmniRoute、Ollama 兩個並列開發通道及既有 provider／模型截圖。
+- [15 頁 PDF 簡報](../output/pdf/pegatron-presentation.pdf)與[3 頁技術報告](../output/pdf/pegatron-technical-report.pdf)已確認定稿。Agent 製作初稿與排版，我審核、微調簡報並匯出 PDF，另保留[可編輯 PPTX](../output/pptx/pegatron-presentation.pptx)。
+- 免費開發配置：Codex／Claude Code Agent 透過 OmniRoute 或 Ollama 兩個並列通道取得模型推論。OmniRoute 串接免費 provider／模型，Ollama 使用 Qwen3.8-27B Q8／Qwen3-Coder-Next Q4；未使用會員模型推論。系統運作另採 Ollama＋`qwen3:4b-instruct`。
 - 本輪固定 seed 42；程式維持簡單、說明採 Google style，介面與建議使用精簡繁體中文。
 
 ## 2. 專案結構
@@ -34,6 +34,8 @@ factory_agent/
 tests/                  # 自動測試
 data/                   # CSV 與生成註記
 outputs/                # 本機執行結果，不提交 Git
+output/pdf/             # 定稿簡報與技術報告
+output/pptx/            # 可編輯簡報
 docs/                   # 規劃與作業資料
 requirements.txt        # 套件版本
 ```
@@ -200,7 +202,7 @@ vibration_t = GammaPPF(u_t, shape=36, scale=0.03/36)
 - [X] 依作業評分與背景調查進行需求問答、盲點檢視並保存計畫。
 - [X] 確認簡單操作、精簡繁中輸出、Google style、主種子優先及文件最後製作。
 - [X] 確認先完成純終端，再經使用者同意接入地端模型。
-- [X] 確認免費模型路由與 Agent 執行、skills 指導、我審核授權的分工；文件與簡報也由 Agent 製作。
+- [X] 確認 OmniRoute、Ollama 兩個並列開發通道與模型來源，以及 Agent 執行、skills 指導、我審核授權的分工；文件與簡報也由 Agent 製作。
 - [X] 使用者授權開始資料生成。
 
 ### 9.2 資料生成
@@ -268,12 +270,13 @@ vibration_t = GammaPPF(u_t, shape=36, scale=0.03/36)
 - [X] 整理 README：完整架構與各部分功能，以及環境、模型準備、執行方式與結果閱讀。
 - [X] 將作業說明、背景調查及協作計畫整理納入文件 PR，供面試官閱讀。
 - [X] 在 README 加入提前預警、品質問題、工單修改預覽與離線結果頁圖片。
-- [ ] 定稿正式簡報與報告使用的展示截圖。
-- [X] 整理 ALL FREE AI TOOLS 使用說明、OmniRoute provider／模型截圖、skills 與 Agent 協作證據。
-- [ ] 製作約 6–8 頁 PDF 簡報，涵蓋工具介紹、流程、成果與展示畫面。
-- [ ] 製作獨立 2–3 頁技術報告 PDF，含模型、架構圖、簡報截圖及 AI 使用說明。
+- [X] 定稿簡報與技術報告中的展示截圖，涵蓋監測、提醒、結果、問答與工單。
+- [X] 整理 ALL FREE AI TOOLS 使用說明、OmniRoute 與 Ollama 開發通道、provider／模型截圖、skills 與 Agent 協作證據。
+- [X] 完成 15 頁 PDF 簡報，涵蓋工具介紹、Skills 實例、資料、架構、模型、展示及工單規則。
+- [X] 完成獨立 3 頁技術報告 PDF，含任務、流程、模型、架構圖、系統示範截圖及 AI 使用說明，經我確認定稿。
+- [X] 我審核並微調簡報後匯出 PDF，保留可編輯 PPTX。
 - [X] 核對背景來源可追溯性，區分研究構想與本專案實作範圍，修正 label 用途及故障確診措辭。
-- [ ] 核對程式、CSV、README、截圖、簡報及技術報告一致且齊全。
+- [X] 核對程式、CSV、README、截圖與交付文件齊全；簡報及技術報告已由我確認。
 
 ### 9.8 延後工作
 
@@ -284,7 +287,7 @@ vibration_t = GammaPPF(u_t, shape=36, scale=0.03/36)
 
 原始規劃先以 grill-me 釐清需求，再以 grilling 檢視盲點；專案拆為四部分：**模擬資料生成 → 異常判定與處置 → AI Agent 串接 → Demo 美化**。
 
-與 Agent 確認後的原始執行順序為：需求問答與規劃 → 主種子資料 → 使用者驗收 → 純終端全流程 → 使用者驗收 → Ollama 與三項問答 → Demo 最終驗收 → 正式文件。每階段先交付可執行結果，再依使用者回饋修正；目前使用者已確認實作告一段落，授權文件先行，正式展示紀錄後補。
+與 Agent 確認後的原始執行順序為：需求問答與規劃 → 主種子資料 → 使用者驗收 → 純終端全流程 → 使用者驗收 → Ollama 與三項問答 → Demo 最終驗收 → 正式文件。每階段先交付結果，再依我的回饋修正；目前實作、簡報與技術報告均已確認完成，Live Demo 排練與正式操作紀錄仍列於第 9.6 節。
 
 | 面向       | 原始／初期安排                         | 目前做法與優化目的                                                   |
 | ---------- | -------------------------------------- | -------------------------------------------------------------------- |
