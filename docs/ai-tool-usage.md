@@ -1,6 +1,6 @@
 # AI 工具使用與 Agent 協作說明
 
-本作業採用 **ALL FREE AI TOOLS 的 Agent 工作流程**：以 Codex／Claude Code 作為 Agent 執行介面，透過 OmniRoute 指定免費 LLM provider 與模型；系統運作時使用 Ollama＋Qwen3 地端推論。我負責計畫討論、執行結果審核與授權，Agent 依 skills 完成各階段細節。
+本作業採用 **ALL FREE AI TOOLS 的 Agent 工作流程**：以 Codex／Claude Code 作為 Agent 執行介面，透過 **OmniRoute＋免費 provider／模型**與 **Ollama＋Qwen3.8-27B Q8／Qwen3-Coder-Next Q4**兩個並列開發通道，依任務需求選擇模型來源。系統運作另使用 Ollama＋`qwen3:4b-instruct`。我負責計畫討論、執行結果審核與授權，Agent 依 skills 完成各階段細節。
 
 以下依我確認的使用方式、實作紀錄與截圖整理。「免費」指本次採用的免費方案、模型或額度；可用範圍依供應商當時的規則與額度。
 
@@ -13,15 +13,18 @@
 | **Skills** | 指導需求確認、設計、程式簡化、審查與交付細節，讓 Agent 依明確方法執行 |
 | **系統內的維修 Agent** | 根據本機證據提供維修解說，執行歷史查詢、交班摘要與工單修改預覽 |
 
-專案 Agent 的執行範圍涵蓋程式與交付文件；書面報告及簡報也由 Agent 製作，再由我審核。正式 PDF 簡報與技術報告目前仍為後續交付，完成狀態見第 6 節。
+專案 Agent 的執行範圍涵蓋程式與交付文件。技術報告與簡報由 Agent 依 skills 製作，我審核，並微調簡報後匯出 PDF。15 頁簡報與 3 頁技術報告均已確認定稿，檔案見第 6 節。
 
 ```mermaid
 flowchart LR
     U[我：討論、審核、授權] --> A[專案 Agent：Codex／Claude Code]
     S[Skills：指導執行細節] --> A
-    A --> G[OmniRoute]
+    A --> G[OmniRoute 開發通道]
     G --> M[免費 LLM providers 與模型]
     M --> A
+    A --> O[Ollama 開發通道]
+    O --> Q[Qwen3.8-27B Q8 或 Qwen3-Coder-Next Q4]
+    Q --> A
     A --> D[程式、測試、文件與簡報等交付物]
     D --> U
 ```
@@ -31,17 +34,18 @@ flowchart LR
 | 階段 | 使用方式 | 產出／作用 |
 | --- | --- | --- |
 | 背景調查 | Gemini Deep Research 免費網頁版 | 產生工業預警與訊號意義的調查初稿，提供 Agent 作為規劃輸入；後續再核對原廠來源與實作範圍 |
-| 專案執行 | Codex／Claude Code Agent＋OmniRoute＋免費上游模型 | 完成規劃、程式、驗證、設計、文件及 PR 等工作 |
+| 專案執行：OmniRoute 通道 | Codex／Claude Code Agent → OmniRoute → 免費上游模型 | 支援規劃、程式、驗證、設計、文件及 PR；使用紀錄見第 3 節 |
+| 專案執行：Ollama 通道 | Codex／Claude Code Agent → Ollama → Qwen3.8-27B Q8 或 Qwen3-Coder-Next Q4 | 支援規劃、程式、驗證、設計、文件及 PR；模型標籤見第 3.4 節 |
 | 工作方法 | 規劃、設計、審查與簡化程式等 skills | 約束 Agent 的執行方式，減少需求遺漏與重複修改 |
-| 系統推論 | 本機 Ollama＋`qwen3:4b-instruct` | 維修情境解說與監測後三項問答 |
+| 系統推論 | Ollama＋`qwen3:4b-instruct` | 維修情境解說與監測後三項問答 |
 
-**本次未使用 Codex／Claude Code 會員方案提供的模型推論。** Coding agent 的操作與工具能力由客戶端提供，實際開發推論來源經 OmniRoute 指向我選用的免費 provider／模型；因此文件將 Agent 介面與上游模型分開列示。
+**本次未使用 Codex／Claude Code 會員方案提供的模型推論。** Agent 的操作與工具能力由客戶端提供，推論來源可經 OmniRoute 或 Ollama 配置；因此文件將 Agent 介面與上游模型分開列示。
 
-開發階段的 OmniRoute 可使用免費雲端來源，包含 Ollama Cloud。系統執行則直接呼叫 `http://127.0.0.1:11434` 的本機 Qwen3，兩條資料路徑分開。模型與連線設定可見 [local_agent.py](../factory_agent/local_agent.py)。
+OmniRoute 的候選來源包含 Ollama Cloud；Ollama 開發通道的模型配置見第 3.4 節。設備監測程式的現行模型為 `qwen3:4b-instruct`，模型與連線設定見 [local_agent.py](../factory_agent/local_agent.py)。
 
 一般使用者依 README 安裝 Python 即可啟動純終端模式；啟用系統內的維修 Agent 時，再準備本機 Ollama。
 
-## 3. OmniRoute 的 provider、模型與使用證據
+## 3. 模型路徑、配置與使用證據
 
 ### 3.1 Provider 與代表配置
 
@@ -111,6 +115,19 @@ flowchart LR
 
 </details>
 
+<a id="ollama-development-channel"></a>
+
+### 3.4 Ollama 開發通道
+
+**Codex／Claude Code Agent → Ollama → 開源模型**與 OmniRoute 通道並列，支援規劃、程式、驗證與文件工作。
+
+| 模型 | Ollama 模型標籤 | 官方來源 |
+| --- | --- | --- |
+| **Qwen3.8-27B Q8** | `qwen3.8:27b-q8_0` | [Qwen3.8 Q8 模型頁](https://ollama.com/library/qwen3.8:27b-q8_0) |
+| **Qwen3-Coder-Next Q4** | `qwen3-coder-next:q4_K_M` | [Qwen3-Coder-Next Q4 模型頁](https://ollama.com/library/qwen3-coder-next:q4_K_M) |
+
+上表為 Ollama 開發通道的模型配置；OmniRoute 的配置與請求證據見第 3.1–3.3 節。
+
 ## 4. Skills 如何指導 Agent，控制溝通與 token 成本
 
 | Skill／方法 | 執行細節 | 減少的重複工作 |
@@ -118,6 +135,7 @@ flowchart LR
 | `grill-me`、`grilling` | 先釐清資料分布、label 角色、門檻邊界、驗收順序與設計盲點 | 需求未釐清就實作，導致後續反覆重寫 |
 | `ponytail` | 優先最小完整變更，重用現有功能，控制依賴與程式複雜度 | 不必要的抽象、功能與重複實作 |
 | `frontend-design`、`data-visualization`、`build-dashboard` | 指導配色、資訊層次、圖表、終端及結果頁呈現 | 缺乏設計準則造成的反覆試排與長篇口頭描述 |
+| `ppt-master`、PDF skills | 指導簡報規格、可編輯版面、講稿、標註修改、匯出與版面檢查 | 頁面增刪後反覆同步內容、頁碼、講稿及交付格式 |
 | `code-review` | 從 Standards、Spec 兩路檢查標準、規格、效率與現實限制；先報告再按授權修改 | 無範圍的全案修改與未驗證的修補 |
 | `pr` | 以變更摘要、前後證據及影響範圍整理提交 | 審閱者重新追溯對話與猜測變更目的 |
 
@@ -136,6 +154,7 @@ Skills 是 Agent 執行任務的方法指引，實際推論由上游 LLM 完成�
 | 穩態與卡值 | 指出現代設備可能長時間維持相同量測 | 保留同值計數，取消僅靠重複值產生的告警；原始資料維持不變 |
 | 模型改善 | 要求改善表現時保留有展示價值的提前預警 | 建立離線評估與回歸條件，保留第 301 筆模型警告、較第 310 筆嚴格超標提前 9 分鐘 |
 | 問答可信度 | 核准 code review 中需要修正的範圍 | 固定查詢批次，由模型選擇事實、程式帶入關鍵內容，補上測試並整理 PR |
+| 簡報定稿 | 逐頁標註、微調並確認 PDF | 依標註拆頁、補充 Skills 與工單規則，同步 15 頁內容及講稿，交付 PPTX 與 PDF |
 
 目前有 82 項回歸測試通過；模型、資料保護、備援與本機 Ollama 的實際工具流程另有驗證。測試用於檢查成果，不能換算成未量測的開發效率百分比。
 
@@ -146,8 +165,8 @@ Skills 是 Agent 執行任務的方法指引，實際推論由上游 LLM 完成�
 | 交付項目 | 執行／審核分工 | 目前狀態 |
 | --- | --- | --- |
 | 程式、資料、測試與終端展示 | Agent 執行，我分階段審核與授權 | 已實作與驗證 |
-| README、計畫與 AI 工具使用說明 | Agent 撰寫與排版，我審核 | 已整理，持續依審核調整 |
-| PDF 簡報 | 後續由 Agent 依簡報相關 skills 整理內容、圖表與版面，我審核 | 待製作 |
-| 2–3 頁技術報告 PDF | 後續由 Agent 依文件／PDF 相關 skills 撰寫、排版與檢查，我審核 | 待製作 |
+| README、計畫與 AI 工具使用說明 | Agent 撰寫與排版，我審核 | 已整理，同步定稿成果與交付狀態 |
+| PDF 簡報 | Agent 依簡報 skills 製作初稿與講稿；我審核、微調並匯出 PDF | [15 頁簡報已定稿](../output/pdf/pegatron-presentation.pdf)，保留[可編輯 PPTX](../output/pptx/pegatron-presentation.pptx) |
+| 2–3 頁技術報告 PDF | Agent 依文件／PDF 相關 skills 撰寫、排版與檢查，我審核 | [3 頁技術報告已定稿](../output/pdf/pegatron-technical-report.pdf) |
 
-正式交付會延續相同的 Agent 執行、skills 指導及我審核授權流程；尚未製作的簡報與報告不列為已完成成果。
+兩份 PDF 均已由我確認完成。Agent 負責製作，skills 指導方法，我負責討論、審核、微調與授權。

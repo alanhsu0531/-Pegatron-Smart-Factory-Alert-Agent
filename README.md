@@ -11,6 +11,8 @@
 
 面試文件：[作業說明](docs/assignment%20explanation.md) ／ [背景調查](docs/background%20research.md) ／ [協作計畫與實作清單](docs/project%20plan.md) ／ [AI 工具使用說明](docs/ai-tool-usage.md)
 
+定稿成果：[15 頁 PDF 簡報](output/pdf/pegatron-presentation.pdf) ／ [3 頁技術報告](output/pdf/pegatron-technical-report.pdf) ／ [可編輯 PPTX](output/pptx/pegatron-presentation.pptx)
+
 <a id="features"></a>
 
 ## 一、系統提供的功能
@@ -197,7 +199,7 @@ python main.py --no-ollama --interval 1 --output-dir outputs/demo
 | 模型逾時或回覆未採用 | 保留規則建議與既有紀錄；問答可縮短問題後再試 |
 | 工單已有新版本 | 重新查詢並建立預覽，再確認儲存 |
 
-實作與逐階段驗收過程見[專案計畫](docs/project%20plan.md)。正式 PDF 簡報、2–3 頁技術報告及展示截圖另行準備。
+實作與逐階段驗收過程見[專案計畫](docs/project%20plan.md)。簡報、技術報告及其中的展示截圖均已定稿，檔案見頁首「定稿成果」。
 
 <a id="architecture"></a>
 
@@ -410,10 +412,15 @@ python -m unittest discover -s tests -q
 
 本作業採 **ALL FREE AI TOOLS 的 Agent 工作流程**。我負責計畫討論、執行結果審核與授權；Agent 依 skills 完成規劃、實作、驗證、美化、PR，以及文件與簡報產製等工作。
 
+專案開發有 **OmniRoute 與 Ollama 兩個並列通道**，依任務需求選擇模型來源。
+
 | 場景 | 工具與推論來源 | 執行內容 |
 | --- | --- | --- |
-| 專案開發 | Codex／Claude Code Agent → OmniRoute → 免費 LLM provider／模型 | 讀取專案、呼叫工具、修改檔案、執行驗證與產製交付物；本次未使用兩者會員方案提供的模型推論 |
+| 專案開發：OmniRoute 通道 | Codex／Claude Code Agent → OmniRoute → 免費 LLM provider／模型 | 支援規劃、程式、驗證與文件工作；路由與請求紀錄見工具說明 |
+| 專案開發：Ollama 通道 | Codex／Claude Code Agent → Ollama → **Qwen3.8-27B Q8** 或 **Qwen3-Coder-Next Q4** | 支援規劃、程式、驗證與文件工作；模型標籤見工具說明 |
 | 執行細節 | 規劃、設計、程式簡化與 code review 等 skills | 指導 Agent 的工作方法，降低反覆修改與不必要 token 消耗 |
-| 系統運作 | 本機 Ollama＋`qwen3:4b-instruct` | 維修解說、歷史查詢、交班摘要與工單修改預覽 |
+| 系統運作 | Ollama＋`qwen3:4b-instruct` | 維修解說、歷史查詢、交班摘要與工單修改預覽 |
 
-背景調查初稿另使用 Gemini Deep Research 免費網頁版。正式 PDF 簡報與書面報告也由 Agent 製作、我審核，目前仍列為後續交付。完整 provider／模型、路由截圖、skills 作用與協作案例見 [AI 工具使用說明](docs/ai-tool-usage.md)。
+本次未使用 Codex／Claude Code 會員方案提供的模型推論。兩個開發通道提供模型推論，Agent 介面與 skills 負責執行流程；Ollama 的完整模型標籤見 [AI 工具使用說明](docs/ai-tool-usage.md#ollama-development-channel)。
+
+背景調查初稿另使用 Gemini Deep Research 免費網頁版。文件與簡報由 Agent 依 skills 製作，我審核；簡報再由我微調並匯出 PDF。15 頁簡報與 3 頁技術報告均已確認定稿。完整 provider／模型、路由截圖、skills 作用與協作案例見 [AI 工具使用說明](docs/ai-tool-usage.md)。
