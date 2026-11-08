@@ -205,38 +205,54 @@ python main.py --no-ollama --interval 1 --output-dir outputs/demo
 
 ## 三、專案架構與實作細節
 
+| 流程圖 | 閱讀重點 |
+| --- | --- |
+| [整體資料流](#system-flow) | 從 CSV 初始化、逐筆監測到結束保存，各模組如何接續 |
+| [四項狀態判定](#status-flow) | 同一筆回報如何形成設備、品質、運轉觀察與 AOI 狀態 |
+| [監測中 AI 解說](#live-agent-flow) | 規則先回覆，模型在背景查工具並補充建議 |
+| [問答與工單確認](#chat-flow) | 三項工具如何查紀錄，以及人工確認後才儲存修改 |
+
+圖中以**藍色表示資料與處理、琥珀色表示判定、青綠色表示 AI、紫色表示人工確認、灰色表示紀錄與輸出**；節點文字與箭頭也保留各自的意義。
+
+<a id="system-flow"></a>
+
 ### 1. 整體流程
+
+`main.py` 串接監測流程；數值判定集中在 `monitor.py`，AI 解說與保存各自負責一段工作。
 
 ```mermaid
 flowchart TD
-    G[generate_data.py] --> C[500 筆原始 CSV]
-    G --> M[獨立生成註記]
-    C --> I[前 250 筆：訓練與校準]
-    C --> S[第 251–500 筆：逐筆讀取]
-    I --> D[品質檢查、有限補值、模型評分]
-    S --> D
-    D --> R[門檻、模型、AOI、持續時間]
-    R --> E[事件追蹤、風險與規則建議]
-    E --> T[Rich 終端與近期趨勢]
-    E --> L[Ollama 唯讀工具與處置解說]
-    L --> V[輸出驗證與規則備援]
-    V --> T
-    E --> O[JSON、離線 HTML、SQLite 批次]
-    V --> O
-    O --> Q[監測後：歷史、交班、工單修改]
-    C --> A[evaluate_model.py 離線評估]
-    M -. 僅離線驗收使用 .-> A
-    classDef source fill:#edf5f8,stroke:#236c86,color:#21313f
-    classDef decision fill:#fff4df,stroke:#8a6126,color:#4a391d
-    classDef localAI fill:#edf6f1,stroke:#426e5f,color:#254b3d
-    classDef record fill:#f0f3f6,stroke:#556579,color:#21313f
-    class G,C,M,I,S source
-    class D,R,E decision
-    class L,V localAI
-    class T,O,Q,A record
+    accTitle: 系統資料流與模組分工
+    accDescr: 先使用前250筆建立模型，再逐筆監測後250筆；終端與逐筆紀錄即時更新，批次結果在結束或中斷時保存。
+    G["generate_data.py<br/>生成 500 筆 CSV"] --> I["monitor.Monitor 初始化<br/>前 200 筆訓練＋後 50 筆校準"]
+    I --> R["main.py 逐筆讀取<br/>第 251–500 筆"]
+    subgraph LIVE["每筆回報的處理"]
+        D["Monitor.analyze<br/>品質、模型分數與當筆風險"]
+        E["EventTracker.update<br/>追蹤事件、保留風險、整理工單"]
+        D --> E
+    end
+    R --> D
+    E --> T["Rich 終端＋trends.py<br/>狀態、趨勢與規則建議"]
+    E --> J["readings.jsonl<br/>每筆寫入並刷新"]
+    E -. "啟用 AI 時，背景處理" .-> A["local_agent.py<br/>唯讀工具、解說驗證與備援"]
+    A -. "採用有效解說" .-> T
+    E --> F["結束或中斷<br/>彙整事件、工單與已採用解說"]
+    F --> O["history_store.py＋result_view.py<br/>SQLite 批次、JSON 與離線 HTML"]
+    O --> C["chat.py<br/>歷史查詢、交班摘要、工單修改"]
+    classDef data fill:#eaf4fb,stroke:#246785,color:#173e53,stroke-width:1.5px
+    classDef decision fill:#fff4da,stroke:#906621,color:#594019,stroke-width:1.5px
+    classDef ai fill:#e6f4ef,stroke:#236e59,color:#194c3e,stroke-width:1.5px
+    classDef record fill:#edf1f6,stroke:#52657b,color:#283b50,stroke-width:1.5px
+    class G,I,R data
+    class D,E decision
+    class A,C ai
+    class T,J,F,O record
+    style LIVE fill:none,stroke:#94a3b8,stroke-dasharray:5 5
 ```
 
-監測器與 Agent 不讀取生成註記，也不取得尚未播放的資料。Ollama 在背景執行，等待期間先提供規則建議。
+實線是主要資料流，虛線是背景 AI 解說。`readings.jsonl` 執行中逐筆寫入；SQLite 批次與結果頁在結束或中斷時保存。完整播放且處於互動終端時，自動接續問答；也能用 `--chat` 另開已保存紀錄。
+
+監測器與 Agent 不讀取生成註記，也不取得尚未播放的資料。`evaluate_model.py` 另以 CSV 與獨立生成註記進行離線評估，不介入即時判定。
 
 <details>
 <summary><strong>原始碼導讀：各模組的責任</strong></summary>
@@ -293,6 +309,36 @@ flowchart TD
 
 ### 3. 逐筆讀取、資料品質與補值
 
+<a id="status-flow"></a>
+
+**同一筆回報，分別回答四個問題。** 設備是否需要處置、回報是否可信、數值組合是否和平常不同，以及外部 AOI 如何判定，各有自己的依據。
+
+```mermaid
+flowchart TD
+    accTitle: 四項狀態如何由同一筆回報產生
+    accDescr: 品質檢查保留原始狀態並有限補值；設備評估整合有效量測、正式模型分數、AOI與事件，運轉觀察與AOI另外顯示。
+    R["本筆原始回報<br/>temp／pressure／vibration／label"]
+    R --> P["品質檢查與有限補值<br/>保留原始值、有效標記與補值狀態"]
+    R --> A["讀取外部 label"]
+    P --> Q["資料品質<br/>正常／關注／警告"]
+    P --> T["有效原始量測<br/>門檻與連續筆數"]
+    P --> M["Isolation Forest 評分<br/>正式分數／暫用分數／無分數"]
+    T --> E["整合風險與事件追蹤<br/>最高等級＋尚未解除的事件"]
+    M -- "僅正式分數觸發模型提醒" --> E
+    A -- "AOI 結果與連續筆數" --> E
+    E --> S["設備綜合評估<br/>正常／關注／警告／危急／未知"]
+    M --> V["運轉觀察<br/>與平常相近／不同<br/>暫補中／資料不足"]
+    A --> O["AOI 設備監測<br/>正常／異常"]
+    classDef data fill:#eaf4fb,stroke:#246785,color:#173e53,stroke-width:1.5px
+    classDef decision fill:#fff4da,stroke:#906621,color:#594019,stroke-width:1.5px
+    classDef record fill:#edf1f6,stroke:#52657b,color:#283b50,stroke-width:1.5px
+    class R,P,A data
+    class T,M,E decision
+    class Q,S,V,O record
+```
+
+四項狀態不必相同：AOI 正常時，設備仍可能因模型連續警告而升級；正在暫補時，運轉觀察會先提示等待新回報，暫用分數不觸發模型提醒。
+
 1. 初始化只讀前 250 筆：前 200 筆訓練、後 50 筆校準；不以 label 篩選資料。
 2. 從第 251 筆開始逐筆監測，到第 500 筆結束。`--interval` 控制播放間隔，不改變資料的分鐘時間軸。
 3. 缺值、999、NaN 或無限值屬於資料品質問題。最後一個有效原始值最多暫補兩分鐘，超期或沒有前值時標為不可用。
@@ -340,6 +386,34 @@ score ≥ 98：模型關注
 
 專案固定使用 `http://127.0.0.1:11434` 與本機模型 `qwen3:4b-instruct`。程式檢查本機權重及工具能力，拒絕遠端模型資訊，不使用代理或 HTTP 重新導向，也不會自動下載模型。允許 Ollama 全域雲端功能開啟；本專案推論仍指定本機模型。
 
+<a id="live-agent-flow"></a>
+
+**規則先給建議，AI 在背景補充解說。** `local_agent.py` 只更新說明內容；風險、工單優先程度與恢復條件維持由程式判定。
+
+```mermaid
+flowchart TD
+    accTitle: 監測中 AI 解說、輸出驗證與規則備援
+    accDescr: 事件先取得規則建議並顯示，背景模型透過三個唯讀工具生成解說；有效且未過期的回覆才採用，否則保留規則或既有建議。
+    E["事件新增或處置情境改變"] --> R["advice.py<br/>立即提供規則建議"]
+    R --> U["終端先顯示重點與檢查方向"]
+    E -. "符合 AI 觸發條件" .-> S["凍結事件當下證據<br/>送往背景工作"]
+    subgraph AI["local_agent.py · 本機 Ollama"]
+        S --> T["三個唯讀工具<br/>get_event · get_history · get_playbook"]
+        T --> L["依證據生成解說<br/>候選排序、檢查理由與查核分流"]
+        L --> V{"內容有效且<br/>事件版本仍一致？"}
+    end
+    V -- "通過" --> A["採用解說<br/>更新終端、事件與工單"]
+    V -- "未通過／已過期" --> F["保留規則或既有建議"]
+    T -. "未就緒／逾時／執行失敗" .-> F
+    classDef decision fill:#fff4da,stroke:#906621,color:#594019,stroke-width:1.5px
+    classDef ai fill:#e6f4ef,stroke:#236e59,color:#194c3e,stroke-width:1.5px
+    classDef record fill:#edf1f6,stroke:#52657b,color:#283b50,stroke-width:1.5px
+    class E,R,V decision
+    class S,T,L,A ai
+    class U,F record
+    style AI fill:none,stroke:#74a896,stroke-dasharray:5 5
+```
+
 警告以上事件新增，或歷史最高風險、類型、感測器組合改變時，背景工作會凍結當下證據並呼叫模型；AOI 類型的關注事件也可觸發。模型透過三個唯讀工具取得資料：
 
 | 工具 | 可讀資料 |
@@ -360,6 +434,34 @@ score ≥ 98：模型關注
 風險、優先程度、工單狀態及恢復條件由程式決定。文字驗證可攔截部分錯誤，無法證明自然語言診斷正確。
 
 ### 7. 監測後的三項問答
+
+<a id="chat-flow"></a>
+
+**查詢使用已保存紀錄，修改先預覽再確認。** `chat.py` 讓模型選擇工具；`history_store.py` 負責讀取批次、檢查工單版本與保存人工修訂。
+
+```mermaid
+flowchart TD
+    accTitle: 監測後三項問答與人工確認工單修改
+    accDescr: 程式先固定查詢批次，模型以歷史與交班工具查證；查到唯一工單且指定修改內容後才能建立預覽，使用者輸入儲存才新增修訂。
+    U["使用者提出問題"] --> B["程式固定查詢批次<br/>最近一批／上一批／指定批次"]
+    B --> A["chat.py<br/>模型依問題選擇工具"]
+    A --> H["query_history<br/>查事件、時間線與工單"]
+    A --> S["handoff_summary<br/>取得交班計數與待確認工單"]
+    H --> F["模型選擇事實 ID<br/>程式填入原始時間、數量與狀態"]
+    S --> F
+    H -- "唯一工單＋明確修改內容" --> P["propose_work_order_edit<br/>生成工單修改預覽"]
+    P --> C{"使用者確認？"}
+    C -- "輸入「儲存」" --> W["重驗版本與可編輯欄位<br/>SQLite 新增修訂並更新結果頁"]
+    C -- "取消／離開" --> N["不套用修改"]
+    classDef data fill:#eaf4fb,stroke:#246785,color:#173e53,stroke-width:1.5px
+    classDef ai fill:#e6f4ef,stroke:#236e59,color:#194c3e,stroke-width:1.5px
+    classDef human fill:#f1edfb,stroke:#685799,color:#4a3c70,stroke-width:1.5px
+    classDef record fill:#edf1f6,stroke:#52657b,color:#283b50,stroke-width:1.5px
+    class B data
+    class A,H,S,P ai
+    class U,C human
+    class F,W,N record
+```
 
 | 功能／工具 | 運作方式 |
 | --- | --- |
